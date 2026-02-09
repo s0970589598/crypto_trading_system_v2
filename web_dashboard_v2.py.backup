@@ -1,0 +1,2191 @@
+#!/usr/bin/env python3
+"""
+交易系統 Web Dashboard v2
+按照系統完整功能清單的 10 大類別組織
+"""
+
+import streamlit as st
+import pandas as pd
+import json
+import glob
+from datetime import datetime
+from pathlib import Path
+import plotly.graph_objects as go
+import plotly.express as px
+import sys
+sys.path.insert(0, '.')
+
+# 設置頁面配置
+st.set_page_config(
+    page_title="交易系統 Dashboard v2",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# 標題
+st.title("🚀 多策略交易系統 Dashboard v2")
+
+# 側邊欄 - 按照 10 大功能分類
+st.sidebar.title("📋 系統功能")
+
+# 主分類
+category = st.sidebar.radio(
+    "選擇功能類別",
+    [
+        "1️⃣ 回測系統",
+        "2️⃣ 實盤交易", 
+        "3️⃣ 參數優化",
+        "4️⃣ 虧損分析",
+        "5️⃣ 性能監控",
+        "6️⃣ 交易覆盤",
+        "7️⃣ 策略管理",
+        "8️⃣ 風險管理",
+        "9️⃣ 數據管理",
+        "🔟 系統配置"
+    ]
+)
+
+# ==================== 1. 回測系統 ====================
+if category == "1️⃣ 回測系統":
+    st.header("📊 回測系統")
+    
+    # 子功能選擇
+    sub_function = st.sidebar.selectbox(
+        "選擇功能",
+        [
+            "單策略回測結果",
+            "多策略組合回測",
+            "槓桿對比測試",
+            "倉位對比測試",
+            "績效指標分析",
+            "交易明細查看"
+        ]
+    )
+    
+    if sub_function == "交易明細查看":
+        st.subheader("📋 交易明細查看")
+        
+        # 查找所有回測結果
+        result_files = glob.glob('backtest_result_*.json')
+        
+        if not result_files:
+            st.warning("⚠️ 沒有找到回測結果文件")
+            st.info("請先運行回測：`python3 backtest_multi_timeframe.py`")
+        else:
+            # 選擇回測結果
+            selected_file = st.selectbox(
+                "選擇回測結果",
+                result_files,
+                format_func=lambda x: x.replace('backtest_result_', '').replace('.json', '')
+            )
+            
+            # 讀取結果
+            with open(selected_file, 'r') as f:
+                result = json.load(f)
+            
+            # 檢查是否有交易記錄
+            if 'trades' not in result or not result['trades']:
+                st.warning("⚠️ 此回測結果沒有交易記錄")
+            else:
+                trades = result['trades']
+                
+                # 轉換為 DataFrame
+                trades_df = pd.DataFrame(trades)
+                
+                # 顯示統計
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("總交易數", len(trades_df))
+                
+                with col2:
+                    winning_trades = len(trades_df[trades_df['pnl'] > 0])
+                    st.metric("獲利交易", winning_trades)
+                
+                with col3:
+                    losing_trades = len(trades_df[trades_df['pnl'] < 0])
+                    st.metric("虧損交易", losing_trades)
+                
+                with col4:
+                    total_pnl = trades_df['pnl'].sum()
+                    st.metric("總損益", f"{total_pnl:.2f} USDT")
+                
+                # 篩選選項
+                st.subheader("🔍 篩選交易")
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    trade_type = st.selectbox(
+                        "交易類型",
+                        ["全部", "獲利", "虧損"]
+                    )
+                
+                with col2:
+                    direction = st.selectbox(
+                        "方向",
+                        ["全部", "做多", "做空"]
+                    )
+                
+                with col3:
+                    sort_by = st.selectbox(
+                        "排序",
+                        ["時間（新到舊）", "時間（舊到新）", "損益（高到低）", "損益（低到高）"]
+                    )
+                
+                # 應用篩選
+                filtered_df = trades_df.copy()
+                
+                if trade_type == "獲利":
+                    filtered_df = filtered_df[filtered_df['pnl'] > 0]
+                elif trade_type == "虧損":
+                    filtered_df = filtered_df[filtered_df['pnl'] < 0]
+                
+                if direction == "做多":
+                    filtered_df = filtered_df[filtered_df['side'] == 'long']
+                elif direction == "做空":
+                    filtered_df = filtered_df[filtered_df['side'] == 'short']
+                
+                # 應用排序
+                if sort_by == "時間（新到舊）":
+                    filtered_df = filtered_df.sort_values('entry_time', ascending=False)
+                elif sort_by == "時間（舊到新）":
+                    filtered_df = filtered_df.sort_values('entry_time', ascending=True)
+                elif sort_by == "損益（高到低）":
+                    filtered_df = filtered_df.sort_values('pnl', ascending=False)
+                elif sort_by == "損益（低到高）":
+                    filtered_df = filtered_df.sort_values('pnl', ascending=True)
+                
+                # 顯示交易明細
+                st.subheader(f"📊 交易明細（共 {len(filtered_df)} 筆）")
+                
+                # 格式化顯示
+                display_df = filtered_df.copy()
+                
+                # 選擇要顯示的列
+                columns_to_show = ['entry_time', 'exit_time', 'side', 'entry_price', 'exit_price', 'quantity', 'pnl', 'pnl_pct']
+                
+                if all(col in display_df.columns for col in columns_to_show):
+                    display_df = display_df[columns_to_show]
+                    
+                    # 重命名列
+                    display_df.columns = ['進場時間', '出場時間', '方向', '進場價', '出場價', '數量', '損益(USDT)', '損益(%)']
+                    
+                    # 格式化數值
+                    display_df['進場價'] = display_df['進場價'].apply(lambda x: f"{x:.2f}")
+                    display_df['出場價'] = display_df['出場價'].apply(lambda x: f"{x:.2f}")
+                    display_df['數量'] = display_df['數量'].apply(lambda x: f"{x:.4f}")
+                    display_df['損益(USDT)'] = display_df['損益(USDT)'].apply(lambda x: f"{x:.2f}")
+                    display_df['損益(%)'] = display_df['損益(%)'].apply(lambda x: f"{x:.2f}%")
+                    
+                    # 顯示表格
+                    st.dataframe(display_df, use_container_width=True, height=400)
+                    
+                    # 下載按鈕
+                    csv = filtered_df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 下載 CSV",
+                        data=csv,
+                        file_name=f"trades_{selected_file.replace('.json', '.csv')}",
+                        mime="text/csv"
+                    )
+                else:
+                    st.dataframe(filtered_df, use_container_width=True, height=400)
+    
+    elif sub_function == "單策略回測結果":
+        st.subheader("📈 單策略回測結果")
+        
+        # 查找所有回測結果
+        result_files = glob.glob('backtest_result_*.json')
+        
+        if not result_files:
+            st.warning("⚠️ 沒有找到回測結果文件")
+            st.info("請先運行回測：`python3 backtest_multi_timeframe.py`")
+        else:
+            # 選擇回測結果
+            selected_file = st.selectbox(
+                "選擇回測結果",
+                result_files,
+                format_func=lambda x: x.replace('backtest_result_', '').replace('.json', '')
+            )
+            
+            # 讀取結果
+            with open(selected_file, 'r') as f:
+                result = json.load(f)
+            
+            # 顯示基本信息
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                total_return = result.get('total_pnl_pct', 0)
+                st.metric(
+                    "總收益",
+                    f"+{total_return:.2f}%",
+                    delta=f"{result.get('total_pnl', 0):.2f} USDT"
+                )
+            
+            with col2:
+                st.metric(
+                    "勝率",
+                    f"{result['win_rate']:.2f}%",
+                    delta=f"{result['winning_trades']}/{result['total_trades']}"
+                )
+            
+            with col3:
+                max_dd = result.get('max_drawdown_pct', result.get('max_drawdown', 0))
+                st.metric(
+                    "最大回撤",
+                    f"-{max_dd:.2f}%",
+                    delta=f"-{result.get('max_drawdown', 0):.2f} USDT",
+                    delta_color="inverse"
+                )
+            
+            with col4:
+                st.metric(
+                    "獲利因子",
+                    f"{result['profit_factor']:.2f}",
+                    delta="優秀" if result['profit_factor'] > 1.5 else "一般"
+                )
+            
+            # 詳細指標
+            st.subheader("📈 詳細指標")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write("**資金情況**")
+                st.write(f"- 初始資金：{result['initial_capital']:.2f} USDT")
+                st.write(f"- 最終資金：{result['final_capital']:.2f} USDT")
+                st.write(f"- 淨損益：{result.get('total_pnl', 0):.2f} USDT")
+                
+                st.write("**交易統計**")
+                st.write(f"- 總交易數：{result['total_trades']}")
+                st.write(f"- 獲利交易：{result['winning_trades']}")
+                st.write(f"- 虧損交易：{result['losing_trades']}")
+            
+            with col2:
+                st.write("**損益分析**")
+                st.write(f"- 平均獲利：{result.get('avg_win', 0):.2f} USDT")
+                st.write(f"- 平均虧損：{result.get('avg_loss', 0):.2f} USDT")
+                st.write(f"- 獲利因子：{result['profit_factor']:.2f}")
+                
+                st.write("**風險指標**")
+                st.write(f"- 最大回撤：{max_dd:.2f}%")
+                st.write(f"- 夏普比率：{result['sharpe_ratio']:.2f}")
+            
+            # 權益曲線
+            if 'equity_curve' in result and result['equity_curve']:
+                st.subheader("📉 權益曲線")
+                
+                try:
+                    equity_curve = result['equity_curve']
+                    
+                    if isinstance(equity_curve, list):
+                        if len(equity_curve) > 0 and isinstance(equity_curve[0], dict):
+                            equity_df = pd.DataFrame(equity_curve)
+                            equity_values = equity_df['equity'].values if 'equity' in equity_df.columns else equity_df.iloc[:, 0].values
+                        else:
+                            equity_values = equity_curve
+                    elif isinstance(equity_curve, dict):
+                        equity_values = list(equity_curve.values())
+                    else:
+                        equity_values = [equity_curve]
+                    
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=list(range(len(equity_values))),
+                        y=equity_values,
+                        mode='lines',
+                        name='權益',
+                        line=dict(color='#00D9FF', width=2)
+                    ))
+                    
+                    fig.update_layout(
+                        title="權益變化",
+                        xaxis_title="交易次數",
+                        yaxis_title="權益 (USDT)",
+                        hovermode='x unified',
+                        height=400
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                except Exception as e:
+                    st.warning(f"⚠️ 無法顯示權益曲線：{str(e)}")
+    
+    elif sub_function == "槓桿對比測試":
+        st.subheader("📈 槓桿對比分析")
+        
+        leverage_files = glob.glob('leverage_comparison_*.csv')
+        
+        if not leverage_files:
+            st.warning("⚠️ 沒有找到槓桿對比結果")
+            st.info("請先運行：`python3 backtest_leverage_comparison.py`")
+        else:
+            selected_file = st.selectbox(
+                "選擇對比結果",
+                leverage_files,
+                format_func=lambda x: x.replace('leverage_comparison_', '').replace('.csv', '')
+            )
+            
+            df = pd.read_csv(selected_file)
+            df['risk_adjusted'] = df['total_return'] / df['max_drawdown']
+            
+            st.subheader("📊 對比表格")
+            
+            display_df = df[['leverage', 'total_return', 'max_drawdown', 'win_rate', 'risk_adjusted']].copy()
+            display_df.columns = ['槓桿', '收益率(%)', '最大回撤(%)', '勝率(%)', '風險調整收益']
+            display_df['收益率(%)'] = display_df['收益率(%)'].round(2)
+            display_df['最大回撤(%)'] = display_df['最大回撤(%)'].round(2)
+            display_df['勝率(%)'] = display_df['勝率(%)'].round(2)
+            display_df['風險調整收益'] = display_df['風險調整收益'].round(2)
+            
+            st.dataframe(display_df, use_container_width=True)
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("📈 收益率 vs 槓桿")
+                fig1 = px.bar(df, x='leverage', y='total_return', 
+                             title='不同槓桿的收益率',
+                             labels={'leverage': '槓桿', 'total_return': '收益率(%)'},
+                             color='total_return',
+                             color_continuous_scale='RdYlGn')
+                st.plotly_chart(fig1, use_container_width=True)
+            
+            with col2:
+                st.subheader("📉 回撤 vs 槓桿")
+                fig2 = px.bar(df, x='leverage', y='max_drawdown',
+                             title='不同槓桿的最大回撤',
+                             labels={'leverage': '槓桿', 'max_drawdown': '最大回撤(%)'},
+                             color='max_drawdown',
+                             color_continuous_scale='RdYlGn_r')
+                st.plotly_chart(fig2, use_container_width=True)
+            
+            best_idx = df['risk_adjusted'].idxmax()
+            best_leverage = int(df.loc[best_idx, 'leverage'])
+            best_return = df.loc[best_idx, 'total_return']
+            best_drawdown = df.loc[best_idx, 'max_drawdown']
+            
+            st.success(f"""
+            💡 **推薦配置**：{best_leverage}x 槓桿
+            - 收益率：+{best_return:.2f}%
+            - 最大回撤：-{best_drawdown:.2f}%
+            - 風險調整收益：{df.loc[best_idx, 'risk_adjusted']:.2f}
+            """)
+
+# ==================== 2. 實盤交易 ====================
+elif category == "2️⃣ 實盤交易":
+    st.header("🔴 實盤交易")
+    
+    sub_function = st.sidebar.selectbox(
+        "選擇功能",
+        [
+            "實盤狀態監控",
+            "當前持倉",
+            "實盤交易記錄",
+            "Telegram 通知設置"
+        ]
+    )
+    
+    if sub_function == "實盤狀態監控":
+        st.subheader("📡 實盤狀態監控")
+        
+        # 檢查是否有實盤日誌
+        log_file = Path("logs/trading.log")
+        
+        if not log_file.exists():
+            st.warning("⚠️ 沒有找到實盤日誌文件")
+            st.info("💡 實盤交易功能需要通過命令行啟動：")
+            st.code("python3 cli.py live --strategy multi-timeframe-aggressive")
+        else:
+            # 讀取最新的日誌
+            try:
+                with open(log_file, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                    recent_logs = lines[-100:]  # 最近 100 行
+                
+                # 解析日誌統計
+                total_lines = len(recent_logs)
+                error_count = sum(1 for line in recent_logs if 'ERROR' in line)
+                warning_count = sum(1 for line in recent_logs if 'WARNING' in line)
+                trade_signals = sum(1 for line in recent_logs if '交易信號' in line or 'SIGNAL' in line)
+                
+                # 顯示統計
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("日誌行數", total_lines)
+                
+                with col2:
+                    st.metric("交易信號", trade_signals)
+                
+                with col3:
+                    st.metric("警告", warning_count, delta_color="inverse")
+                
+                with col4:
+                    st.metric("錯誤", error_count, delta_color="inverse")
+                
+                # 顯示最新日誌
+                st.subheader("📝 最新日誌（最近 50 行）")
+                
+                log_text = ''.join(recent_logs[-50:])
+                st.text_area("日誌內容", log_text, height=400)
+                
+                # 自動刷新選項
+                auto_refresh = st.checkbox("自動刷新（每 5 秒）")
+                
+                if auto_refresh:
+                    import time
+                    time.sleep(5)
+                    st.rerun()
+            
+            except Exception as e:
+                st.error(f"❌ 讀取日誌失敗：{str(e)}")
+        
+        st.divider()
+        
+        st.write("**功能說明**：")
+        st.write("- 單策略實盤運行")
+        st.write("- 多策略並行運行")
+        st.write("- 乾跑模式（不實際下單）")
+        st.write("- 自動下單")
+        st.write("- Telegram 實時通知")
+        st.write("- 自動風險控制")
+    
+    elif sub_function == "當前持倉":
+        st.subheader("💼 當前持倉")
+        
+        # 檢查是否有持倉記錄文件
+        position_file = Path("data/trade_history/current_positions.json")
+        
+        if not position_file.exists():
+            st.info("⚠️ 沒有當前持倉記錄")
+            st.write("實盤運行時會自動記錄持倉信息")
+        else:
+            try:
+                with open(position_file, 'r') as f:
+                    positions = json.load(f)
+                
+                if not positions:
+                    st.info("✅ 當前無持倉")
+                else:
+                    st.write(f"**持倉數量**：{len(positions)}")
+                    
+                    # 顯示每個持倉
+                    for i, pos in enumerate(positions):
+                        with st.expander(f"持倉 {i+1}: {pos.get('symbol', 'N/A')} - {pos.get('side', 'N/A')}"):
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                st.write(f"**交易對**：{pos.get('symbol', 'N/A')}")
+                                st.write(f"**方向**：{pos.get('side', 'N/A')}")
+                                st.write(f"**數量**：{pos.get('quantity', 0):.4f}")
+                            
+                            with col2:
+                                st.write(f"**進場價**：{pos.get('entry_price', 0):.2f}")
+                                st.write(f"**當前價**：{pos.get('current_price', 0):.2f}")
+                                st.write(f"**槓桿**：{pos.get('leverage', 1)}x")
+                            
+                            with col3:
+                                pnl = pos.get('unrealized_pnl', 0)
+                                pnl_pct = pos.get('unrealized_pnl_pct', 0)
+                                st.metric("未實現損益", f"{pnl:.2f} USDT", f"{pnl_pct:.2f}%")
+                                st.write(f"**止損價**：{pos.get('stop_loss', 0):.2f}")
+                                st.write(f"**目標價**：{pos.get('take_profit', 0):.2f}")
+            
+            except Exception as e:
+                st.error(f"❌ 讀取持倉失敗：{str(e)}")
+    
+    elif sub_function == "實盤交易記錄":
+        st.subheader("📊 實盤交易記錄")
+        
+        # 檢查是否有交易記錄
+        trade_history_files = glob.glob('data/trade_history/trades_*.json')
+        
+        if not trade_history_files:
+            st.info("⚠️ 沒有實盤交易記錄")
+        else:
+            # 選擇日期
+            selected_file = st.selectbox(
+                "選擇日期",
+                trade_history_files,
+                format_func=lambda x: x.replace('data/trade_history/trades_', '').replace('.json', '')
+            )
+            
+            # 讀取交易記錄
+            with open(selected_file, 'r') as f:
+                trades = json.load(f)
+            
+            if not trades:
+                st.info("該日期沒有交易記錄")
+            else:
+                # 轉換為 DataFrame
+                trades_df = pd.DataFrame(trades)
+                
+                # 顯示統計
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("總交易數", len(trades_df))
+                
+                with col2:
+                    winning = len(trades_df[trades_df['pnl'] > 0])
+                    st.metric("獲利交易", winning)
+                
+                with col3:
+                    losing = len(trades_df[trades_df['pnl'] < 0])
+                    st.metric("虧損交易", losing)
+                
+                with col4:
+                    total_pnl = trades_df['pnl'].sum()
+                    st.metric("總損益", f"{total_pnl:.2f} USDT")
+                
+                # 顯示交易列表
+                st.dataframe(trades_df, use_container_width=True)
+    
+    else:  # Telegram 通知設置
+        st.subheader("📢 Telegram 通知設置")
+        
+        try:
+            import yaml
+            with open('system_config.yaml', 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            telegram_config = config.get('notifications', {}).get('telegram', {})
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write("**當前設置**")
+                enabled = telegram_config.get('enabled', False)
+                st.write(f"- 狀態：{'✅ 啟用' if enabled else '❌ 禁用'}")
+                st.write(f"- Bot Token：{'已設置' if telegram_config.get('bot_token') else '未設置'}")
+                st.write(f"- Chat ID：{'已設置' if telegram_config.get('chat_id') else '未設置'}")
+            
+            with col2:
+                st.write("**通知類型**")
+                notify_types = telegram_config.get('notify_on', [])
+                st.write(f"- 交易信號：{'✅' if 'signal' in notify_types else '❌'}")
+                st.write(f"- 訂單執行：{'✅' if 'order' in notify_types else '❌'}")
+                st.write(f"- 風險警報：{'✅' if 'risk' in notify_types else '❌'}")
+                st.write(f"- 錯誤：{'✅' if 'error' in notify_types else '❌'}")
+            
+            st.divider()
+            
+            st.write("**測試 Telegram 連接**")
+            if st.button("發送測試消息"):
+                st.info("請在命令行運行：`python3 test_telegram.py`")
+        
+        except Exception as e:
+            st.error(f"❌ 讀取配置失敗：{str(e)}")
+
+# ==================== 3. 參數優化 ====================
+elif category == "3️⃣ 參數優化":
+    st.header("🔧 參數優化")
+    
+    sub_function = st.sidebar.selectbox(
+        "選擇功能",
+        [
+            "優化結果查看",
+            "參數敏感度分析",
+            "優化任務管理"
+        ]
+    )
+    
+    if sub_function == "優化結果查看":
+        st.subheader("📊 優化結果查看")
+        
+        # 查找優化結果文件
+        optimize_files = glob.glob('data/backtest_results/optimize_*.json')
+        
+        if not optimize_files:
+            st.warning("⚠️ 沒有找到優化結果文件")
+            st.info("請先運行優化：`python3 cli.py optimize --strategy multi-timeframe-aggressive --method grid`")
+        else:
+            # 選擇優化結果
+            selected_file = st.selectbox(
+                "選擇優化結果",
+                optimize_files,
+                format_func=lambda x: x.replace('data/backtest_results/optimize_', '').replace('.json', '')
+            )
+            
+            # 讀取結果
+            with open(selected_file, 'r') as f:
+                result = json.load(f)
+            
+            # 顯示基本信息
+            st.subheader("📋 優化信息")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.write(f"**優化方法**：{result.get('method', 'N/A')}")
+                st.write(f"**測試組合數**：{result.get('total_combinations_tested', 0)}")
+            
+            with col2:
+                st.write(f"**優化時間**：{result.get('optimization_time', 0):.2f} 秒")
+                st.write(f"**最佳評分**：{result.get('best_score', 0):.4f}")
+            
+            with col3:
+                train_perf = result.get('train_performance', {})
+                val_perf = result.get('validation_performance', {})
+                st.write(f"**訓練集勝率**：{train_perf.get('win_rate', 0):.2%}")
+                st.write(f"**驗證集勝率**：{val_perf.get('win_rate', 0):.2%}")
+            
+            # 最佳參數
+            st.subheader("🎯 最佳參數")
+            
+            best_params = result.get('best_params', {})
+            
+            if best_params:
+                # 分組顯示參數
+                param_groups = {}
+                for key, value in best_params.items():
+                    if '.' in key:
+                        group = key.split('.')[0]
+                        param_name = '.'.join(key.split('.')[1:])
+                    else:
+                        group = '其他'
+                        param_name = key
+                    
+                    if group not in param_groups:
+                        param_groups[group] = {}
+                    param_groups[group][param_name] = value
+                
+                # 顯示分組參數
+                cols = st.columns(len(param_groups))
+                
+                for i, (group, params) in enumerate(param_groups.items()):
+                    with cols[i]:
+                        st.write(f"**{group}**")
+                        for param, value in params.items():
+                            if isinstance(value, float):
+                                st.write(f"- {param}: {value:.4f}")
+                            else:
+                                st.write(f"- {param}: {value}")
+            
+            # 性能對比
+            st.subheader("📈 性能對比")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write("**訓練集**")
+                st.write(f"- 總交易數：{train_perf.get('total_trades', 0)}")
+                st.write(f"- 勝率：{train_perf.get('win_rate', 0):.2%}")
+                st.write(f"- 總損益：{train_perf.get('total_pnl', 0):.2f} USDT")
+                st.write(f"- 獲利因子：{train_perf.get('profit_factor', 0):.2f}")
+                st.write(f"- 夏普比率：{train_perf.get('sharpe_ratio', 0):.2f}")
+            
+            with col2:
+                st.write("**驗證集**")
+                st.write(f"- 總交易數：{val_perf.get('total_trades', 0)}")
+                st.write(f"- 勝率：{val_perf.get('win_rate', 0):.2%}")
+                st.write(f"- 總損益：{val_perf.get('total_pnl', 0):.2f} USDT")
+                st.write(f"- 獲利因子：{val_perf.get('profit_factor', 0):.2f}")
+                st.write(f"- 夏普比率：{val_perf.get('sharpe_ratio', 0):.2f}")
+            
+            # 參數敏感度
+            if 'parameter_sensitivity' in result:
+                st.subheader("📊 參數敏感度")
+                
+                sensitivity = result['parameter_sensitivity']
+                
+                for param_name, scores in sensitivity.items():
+                    if scores:
+                        st.write(f"**{param_name}**")
+                        
+                        # 轉換為 DataFrame
+                        df = pd.DataFrame(scores, columns=['值', '評分'])
+                        
+                        # 繪製圖表
+                        fig = px.scatter(df, x='值', y='評分', 
+                                       title=f'{param_name} 敏感度分析',
+                                       trendline="lowess")
+                        st.plotly_chart(fig, use_container_width=True)
+    
+    elif sub_function == "優化任務管理":
+        st.subheader("🎯 參數優化")
+        st.info("💡 參數優化需要通過命令行啟動：")
+        st.code("python3 cli.py optimize --strategy multi-timeframe-aggressive --method grid")
+        
+        st.write("**支持的優化方法**：")
+        st.write("- 網格搜索（Grid Search）")
+        st.write("- 隨機搜索（Random Search）")
+        st.write("- 貝葉斯優化（Bayesian Optimization）")
+
+# ==================== 4. 虧損分析 ====================
+elif category == "4️⃣ 虧損分析":
+    st.header("📉 虧損分析")
+    
+    sub_function = st.sidebar.selectbox(
+        "選擇功能",
+        [
+            "虧損原因分類",
+            "虧損模式識別",
+            "改進建議"
+        ]
+    )
+    
+    st.subheader("🔍 虧損分析工具")
+    st.info("💡 虧損分析需要通過 Python 腳本運行：")
+    st.code("python3 example_loss_analyzer.py")
+
+# ==================== 5. 性能監控 ====================
+elif category == "5️⃣ 性能監控":
+    st.header("📊 性能監控")
+    
+    sub_function = st.sidebar.selectbox(
+        "選擇功能",
+        [
+            "實時指標追蹤",
+            "異常檢測",
+            "策略退化檢測"
+        ]
+    )
+    
+    st.subheader("📈 性能監控")
+    st.info("💡 性能監控需要通過 Python 腳本運行：")
+    st.code("python3 example_performance_monitor.py")
+
+# ==================== 6. 交易覆盤 ====================
+elif category == "6️⃣ 交易覆盤":
+    st.header("📝 交易覆盤")
+    
+    sub_function = st.sidebar.selectbox(
+        "選擇功能",
+        [
+            "BingX 交易分析",
+            "交易記錄管理",
+            "執行質量評分",
+            "覆盤報告"
+        ]
+    )
+    
+    if sub_function == "BingX 交易分析":
+        st.subheader("💰 BingX 交易分析")
+        
+        try:
+            from 完整交易分析 import BingXTradeAnalyzer
+            
+            analyzer = BingXTradeAnalyzer()
+            analyzer.load_data()
+            
+            order_analysis = analyzer.analyze_orders()
+            trans_analysis = analyzer.analyze_transactions()
+            
+            if order_analysis is None and trans_analysis is None:
+                st.warning("⚠️ 沒有找到交易記錄")
+                st.info("請確保 bingxHistory 目錄中有 Order_History 和 Transaction_History 文件")
+            else:
+                st.success(f"✅ 成功載入交易數據")
+                
+                # 訂單分析
+                if order_analysis:
+                    st.subheader("📋 訂單分析")
+                    
+                    summary = order_analysis['summary']
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("總訂單數", summary['total_orders'])
+                    
+                    with col2:
+                        st.metric("勝率", f"{summary['win_rate']:.2f}%",
+                                 delta="優秀" if summary['win_rate'] >= 50 else "需改進",
+                                 delta_color="normal" if summary['win_rate'] >= 50 else "inverse")
+                    
+                    with col3:
+                        st.metric("總盈虧", f"{summary['total_pnl']:.2f} USDT",
+                                 delta_color="normal" if summary['total_pnl'] >= 0 else "inverse")
+                    
+                    with col4:
+                        st.metric("總手續費", f"{summary['total_fees']:.2f} USDT",
+                                 delta_color="inverse")
+                    
+                    # 按帳戶類型分析
+                    st.subheader("💼 按帳戶類型分析")
+                    by_account = order_analysis['by_account']
+                    st.dataframe(by_account, use_container_width=True)
+        
+        except Exception as e:
+            st.error(f"❌ 分析失敗：{str(e)}")
+    
+    elif sub_function == "交易記錄管理":
+        st.subheader("📝 交易記錄管理")
+        
+        st.info("""
+        **功能說明**：
+        - 上傳 BingX Order_History 文件（Excel 或 CSV）
+        - 自動按 Order No 去重
+        - 按天保存到 `data/review_history/bingx/orders/`
+        - 支持增量更新
+        """)
+        
+        # 步驟 1：選擇交易所
+        st.subheader("1️⃣ 選擇交易所")
+        exchange = st.radio(
+            "交易所",
+            ["BingX", "Binance（未來）", "OKX（未來）"],
+            disabled=[False, True, True]
+        )
+        
+        if exchange != "BingX":
+            st.warning("⚠️ 目前只支持 BingX")
+        else:
+            # 步驟 2：上傳文件
+            st.subheader("2️⃣ 上傳 Order_History")
+            
+            uploaded_file = st.file_uploader(
+                "選擇 Order_History 文件",
+                type=['xlsx', 'xls', 'csv'],
+                help="從 BingX 匯出的 Order_History 文件"
+            )
+        
+        if uploaded_file is not None:
+            try:
+                # 檢測文件真實類型
+                uploaded_file.seek(0)
+                file_header = uploaded_file.read(4)
+                uploaded_file.seek(0)
+                
+                is_excel = file_header[:2] == b'PK'
+                file_extension = uploaded_file.name.split('.')[-1].lower()
+                
+                if is_excel:
+                    st.caption(f"📌 檢測到 Excel 格式（副檔名：.{file_extension}）")
+                    file_extension = 'xlsx'
+                
+                # 讀取文件
+                all_orders = []
+                
+                if file_extension == 'csv':
+                    # CSV 格式
+                    encodings = ['utf-8', 'utf-8-sig', 'big5', 'gb2312', 'gbk', 'gb18030', 'latin1', 'cp1252']
+                    df = None
+                    
+                    for encoding in encodings:
+                        try:
+                            uploaded_file.seek(0)
+                            df = pd.read_csv(uploaded_file, encoding=encoding)
+                            st.caption(f"使用編碼：{encoding}")
+                            break
+                        except:
+                            continue
+                    
+                    if df is None:
+                        st.error("❌ 無法讀取 CSV 文件")
+                    else:
+                        # 推斷帳戶類型
+                        if 'Standard' in uploaded_file.name:
+                            df['account_type'] = 'Standard_Futures'
+                        elif 'Perpetual' in uploaded_file.name or 'USDⓈ' in uploaded_file.name:
+                            df['account_type'] = 'USDⓢ_M_Perpetual_Futures'
+                        else:
+                            df['account_type'] = 'Unknown'
+                        
+                        all_orders.append(df)
+                
+                else:
+                    # Excel 格式（多個工作表）
+                    xl = pd.ExcelFile(uploaded_file)
+                    
+                    for sheet_name in xl.sheet_names:
+                        df = pd.read_excel(uploaded_file, sheet_name=sheet_name)
+                        if len(df) > 0:
+                            df['account_type'] = sheet_name
+                            all_orders.append(df)
+                
+                if not all_orders:
+                    st.warning("⚠️ 文件中沒有數據")
+                else:
+                    # 合併所有訂單
+                    combined_df = pd.concat(all_orders, ignore_index=True)
+                
+                # 步驟 3：預覽數據
+                st.subheader("3️⃣ 預覽數據")
+                
+                    # 識別 Order No 欄位
+                    order_no_col = None
+                    for col in ['Order No', 'Order No.', 'order_no', 'OrderNo']:
+                        if col in combined_df.columns:
+                            order_no_col = col
+                            break
+                    
+                    if not order_no_col:
+                        st.error("❌ 找不到 Order No 欄位")
+                        st.write("可用欄位：", ", ".join(combined_df.columns.tolist()))
+                    else:
+                        # 統計信息
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.metric("總訂單數", len(combined_df))
+                        
+                        with col2:
+                            # 時間範圍
+                            time_cols = ['closeTime(UTC+8)', 'close_time', 'time']
+                            time_col = None
+                            for col in time_cols:
+                                if col in combined_df.columns:
+                                    time_col = col
+                                    break
+                            
+                            if time_col:
+                                combined_df[time_col] = pd.to_datetime(combined_df[time_col], errors='coerce')
+                                min_date = combined_df[time_col].min()
+                                max_date = combined_df[time_col].max()
+                                st.write(f"**時間範圍**")
+                                st.write(f"{min_date.date()} 至 {max_date.date()}")
+                        
+                        with col3:
+                            # 帳戶類型分佈
+                            account_counts = combined_df['account_type'].value_counts()
+                            st.write("**帳戶類型**")
+                            for acc_type, count in account_counts.items():
+                                st.write(f"- {acc_type}: {count}")
+                        
+                        # 檢查重複
+                        st.subheader("4️⃣ 檢查重複")
+                        
+                        # 載入已存在的 Order No
+                        order_index_file = Path("data/review_history/bingx/metadata/order_index.json")
+                        existing_orders = set()
+                        
+                        if order_index_file.exists():
+                            try:
+                                with open(order_index_file, 'r', encoding='utf-8') as f:
+                                    index_data = json.load(f)
+                                    existing_orders = set(index_data.get('order_numbers', []))
+                            except:
+                                pass
+                        
+                        # 檢查當前文件中的 Order No
+                        current_orders = set(combined_df[order_no_col].astype(str).tolist())
+                        duplicate_orders = current_orders & existing_orders
+                        new_orders = current_orders - existing_orders
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.metric("新訂單", len(new_orders), delta="將被保存")
+                        
+                        with col2:
+                            st.metric("重複訂單", len(duplicate_orders), delta="將被跳過", delta_color="inverse")
+                        
+                        if len(duplicate_orders) > 0:
+                            with st.expander(f"查看 {len(duplicate_orders)} 個重複的 Order No"):
+                                st.write(list(duplicate_orders)[:20])
+                                if len(duplicate_orders) > 20:
+                                    st.write(f"... 還有 {len(duplicate_orders) - 20} 個")
+                        
+                        # 步驟 5：處理選項
+                        st.subheader("5️⃣ 處理選項")
+                        
+                        duplicate_action = st.radio(
+                            "重複訂單處理方式",
+                            ["跳過重複（推薦）", "更新重複", "保留所有"],
+                            help="跳過：只保存新訂單 | 更新：用新數據覆蓋 | 保留所有：允許重複"
+                        )
+                        
+                        # 步驟 6：轉換並保存
+                        st.subheader("6️⃣ 轉換並保存")
+                        
+                        if st.button("🔄 轉換並保存", type="primary"):
+                            try:
+                                with st.spinner("正在處理..."):
+                                    # 創建目錄
+                                    base_dir = Path("data/review_history/bingx")
+                                    orders_dir = base_dir / "orders"
+                                    metadata_dir = base_dir / "metadata"
+                                    
+                                    orders_dir.mkdir(parents=True, exist_ok=True)
+                                    metadata_dir.mkdir(parents=True, exist_ok=True)
+                                    
+                                    # 處理每個訂單
+                                    saved_count = 0
+                                    skipped_count = 0
+                                    updated_count = 0
+                                    
+                                    # 按日期分組
+                                    if time_col:
+                                        combined_df['date'] = pd.to_datetime(combined_df[time_col], errors='coerce').dt.date
+                                        grouped = combined_df.groupby('date')
+                                    else:
+                                        # 如果沒有時間欄位，全部保存到一個文件
+                                        grouped = [(datetime.now().date(), combined_df)]
+                                    
+                                    new_order_numbers = []
+                                    
+                                    for date, group in grouped:
+                                        if pd.isna(date):
+                                            continue
+                                        
+                                        # 文件路徑
+                                        year = date.year
+                                        month = f"{date.month:02d}"
+                                        day_file = f"{date.strftime('%Y%m%d')}.json"
+                                        
+                                        file_path = orders_dir / str(year) / month / day_file
+                                        file_path.parent.mkdir(parents=True, exist_ok=True)
+                                        
+                                        # 讀取已存在的數據
+                                        existing_data = []
+                                        if file_path.exists():
+                                            try:
+                                                with open(file_path, 'r', encoding='utf-8') as f:
+                                                    existing_data = json.load(f)
+                                            except:
+                                                pass
+                                        
+                                        # 轉換當天的訂單
+                                        day_orders = []
+                                        
+                                        for _, row in group.iterrows():
+                                            order_no = str(row.get(order_no_col, ''))
+                                            
+                                            # 檢查重複
+                                            if order_no in existing_orders:
+                                                if "跳過" in duplicate_action:
+                                                    skipped_count += 1
+                                                    continue
+                                                elif "更新" in duplicate_action:
+                                                    # 從已存在數據中移除舊的
+                                                    existing_data = [o for o in existing_data if o.get('order_no') != order_no]
+                                                    updated_count += 1
+                                            
+                                            # 轉換為標準格式
+                                            order = {
+                                                'order_no': order_no,
+                                                'trade_id': f"bingx_{order_no}",
+                                                'source': 'bingx',
+                                                'account_type': str(row.get('account_type', '')),
+                                                'symbol': str(row.get('symbol', '')),
+                                                'side': str(row.get('side', '')),
+                                                'open_time': str(row.get('openTime(UTC+8)', '')),
+                                                'close_time': str(row.get('closeTime(UTC+8)', '')),
+                                                'entry_price': float(row.get('openPrice', 0)),
+                                                'exit_price': float(row.get('closePrice', 0)),
+                                                'quantity': float(row.get('quantity', 0)),
+                                                'leverage': float(row.get('leverage', 1)),
+                                                'pnl': float(row.get('Realized PNL', 0)),
+                                                'fee': float(row.get('fees', 0)),
+                                                'uploaded_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                                'file_source': uploaded_file.name
+                                            }
+                                            
+                                            day_orders.append(order)
+                                            new_order_numbers.append(order_no)
+                                            saved_count += 1
+                                        
+                                        # 合併並保存
+                                        if day_orders:
+                                            all_day_orders = existing_data + day_orders
+                                            
+                                            with open(file_path, 'w', encoding='utf-8') as f:
+                                                json.dump(all_day_orders, f, indent=2, ensure_ascii=False)
+                                    
+                                    # 更新索引
+                                    all_order_numbers = list(existing_orders | set(new_order_numbers))
+                                    
+                                    index_data = {
+                                        'order_numbers': all_order_numbers,
+                                        'total_orders': len(all_order_numbers),
+                                        'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                    }
+                                    
+                                    with open(order_index_file, 'w', encoding='utf-8') as f:
+                                        json.dump(index_data, f, indent=2, ensure_ascii=False)
+                                    
+                                    # 顯示結果
+                                    st.success("✅ 轉換完成！")
+                                    
+                                    col1, col2, col3 = st.columns(3)
+                                    
+                                    with col1:
+                                        st.metric("已保存", saved_count)
+                                    
+                                    with col2:
+                                        st.metric("已跳過", skipped_count)
+                                    
+                                    with col3:
+                                        st.metric("已更新", updated_count)
+                                    
+                                    st.info(f"📁 保存位置：`data/review_history/bingx/orders/`")
+                                    st.info(f"📋 索引已更新：{len(all_order_numbers)} 個 Order No")
+                            
+                            except Exception as e:
+                                st.error(f"❌ 保存失敗：{str(e)}")
+                                import traceback
+                                st.code(traceback.format_exc())
+                    for col in time_cols:
+                        if col in combined_df.columns:
+                            time_col = col
+                            break
+                    
+                    if time_col:
+                        combined_df[time_col] = pd.to_datetime(combined_df[time_col], errors='coerce')
+                        min_date = combined_df[time_col].min()
+                        max_date = combined_df[time_col].max()
+                        st.write(f"**時間範圍**")
+                        st.write(f"{min_date.date()} 至 {max_date.date()}")
+                
+                with col3:
+                    # 帳戶類型分佈
+                    account_counts = combined_df['account_type'].value_counts()
+                    st.write("**帳戶類型**")
+                    for acc_type, count in account_counts.items():
+                        st.write(f"- {acc_type}: {count}")
+                
+                # 檢查重複
+                st.subheader("4️⃣ 檢查重複")
+                
+                # 載入已存在的 Order No
+                order_index_file = Path("data/review_history/bingx/metadata/order_index.json")
+                existing_orders = set()
+                
+                if order_index_file.exists():
+                    try:
+                        with open(order_index_file, 'r', encoding='utf-8') as f:
+                            index_data = json.load(f)
+                            existing_orders = set(index_data.get('order_numbers', []))
+                    except:
+                        pass
+                
+                # 檢查當前文件中的 Order No
+                current_orders = set(combined_df[order_no_col].astype(str).tolist())
+                duplicate_orders = current_orders & existing_orders
+                new_orders = current_orders - existing_orders
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.metric("新訂單", len(new_orders), delta="將被保存")
+                
+                with col2:
+                    st.metric("重複訂單", len(duplicate_orders), delta="將被跳過", delta_color="inverse")
+                
+                if len(duplicate_orders) > 0:
+                    with st.expander(f"查看 {len(duplicate_orders)} 個重複的 Order No"):
+                        st.write(list(duplicate_orders)[:20])
+                        if len(duplicate_orders) > 20:
+                            st.write(f"... 還有 {len(duplicate_orders) - 20} 個")
+                
+                # 步驟 5：處理選項
+                st.subheader("5️⃣ 處理選項")
+                
+                duplicate_action = st.radio(
+                    "重複訂單處理方式",
+                    ["跳過重複（推薦）", "更新重複", "保留所有"],
+                    help="跳過：只保存新訂單 | 更新：用新數據覆蓋 | 保留所有：允許重複"
+                )
+                
+                # 步驟 6：轉換並保存
+                st.subheader("6️⃣ 轉換並保存")
+                
+                if st.button("🔄 轉換並保存", type="primary"):
+                    try:
+                        with st.spinner("正在處理..."):
+                            # 創建目錄
+                            base_dir = Path("data/review_history/bingx")
+                            orders_dir = base_dir / "orders"
+                            metadata_dir = base_dir / "metadata"
+                            
+                            orders_dir.mkdir(parents=True, exist_ok=True)
+                            metadata_dir.mkdir(parents=True, exist_ok=True)
+                            
+                            # 處理每個訂單
+                            saved_count = 0
+                            skipped_count = 0
+                            updated_count = 0
+                            
+                            # 按日期分組
+                            if time_col:
+                                combined_df['date'] = pd.to_datetime(combined_df[time_col], errors='coerce').dt.date
+                                grouped = combined_df.groupby('date')
+                            else:
+                                # 如果沒有時間欄位，全部保存到一個文件
+                                grouped = [(datetime.now().date(), combined_df)]
+                            
+                            new_order_numbers = []
+                            
+                            for date, group in grouped:
+                                if pd.isna(date):
+                                    continue
+                                
+                                # 文件路徑
+                                year = date.year
+                                month = f"{date.month:02d}"
+                                day_file = f"{date.strftime('%Y%m%d')}.json"
+                                
+                                file_path = orders_dir / str(year) / month / day_file
+                                file_path.parent.mkdir(parents=True, exist_ok=True)
+                                
+                                # 讀取已存在的數據
+                                existing_data = []
+                                if file_path.exists():
+                                    try:
+                                        with open(file_path, 'r', encoding='utf-8') as f:
+                                            existing_data = json.load(f)
+                                    except:
+                                        pass
+                                
+                                # 轉換當天的訂單
+                                day_orders = []
+                                
+                                for _, row in group.iterrows():
+                                    order_no = str(row.get(order_no_col, ''))
+                                    
+                                    # 檢查重複
+                                    if order_no in existing_orders:
+                                        if "跳過" in duplicate_action:
+                                            skipped_count += 1
+                                            continue
+                                        elif "更新" in duplicate_action:
+                                            # 從已存在數據中移除舊的
+                                            existing_data = [o for o in existing_data if o.get('order_no') != order_no]
+                                            updated_count += 1
+                                    
+                                    # 轉換為標準格式
+                                    order = {
+                                        'order_no': order_no,
+                                        'trade_id': f"bingx_{order_no}",
+                                        'source': 'bingx',
+                                        'account_type': str(row.get('account_type', '')),
+                                        'symbol': str(row.get('symbol', '')),
+                                        'side': str(row.get('side', '')),
+                                        'open_time': str(row.get('openTime(UTC+8)', '')),
+                                        'close_time': str(row.get('closeTime(UTC+8)', '')),
+                                        'entry_price': float(row.get('openPrice', 0)),
+                                        'exit_price': float(row.get('closePrice', 0)),
+                                        'quantity': float(row.get('quantity', 0)),
+                                        'leverage': float(row.get('leverage', 1)),
+                                        'pnl': float(row.get('Realized PNL', 0)),
+                                        'fee': float(row.get('fees', 0)),
+                                        'uploaded_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                        'file_source': uploaded_file.name
+                                    }
+                                    
+                                    day_orders.append(order)
+                                    new_order_numbers.append(order_no)
+                                    saved_count += 1
+                                
+                                # 合併並保存
+                                if day_orders:
+                                    all_day_orders = existing_data + day_orders
+                                    
+                                    with open(file_path, 'w', encoding='utf-8') as f:
+                                        json.dump(all_day_orders, f, indent=2, ensure_ascii=False)
+                            
+                            # 更新索引
+                            all_order_numbers = list(existing_orders | set(new_order_numbers))
+                            
+                            index_data = {
+                                'order_numbers': all_order_numbers,
+                                'total_orders': len(all_order_numbers),
+                                'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            }
+                            
+                            with open(order_index_file, 'w', encoding='utf-8') as f:
+                                json.dump(index_data, f, indent=2, ensure_ascii=False)
+                            
+                            # 顯示結果
+                            st.success("✅ 轉換完成！")
+                            
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                st.metric("已保存", saved_count)
+                            
+                            with col2:
+                                st.metric("已跳過", skipped_count)
+                            
+                            with col3:
+                                st.metric("已更新", updated_count)
+                            
+                            st.info(f"📁 保存位置：`data/review_history/bingx/orders/`")
+                            st.info(f"📋 索引已更新：{len(all_order_numbers)} 個 Order No")
+                    
+                    except Exception as e:
+                        st.error(f"❌ 保存失敗：{str(e)}")
+                        import traceback
+                        st.code(traceback.format_exc())
+            
+            except Exception as e:
+                st.error(f"❌ 讀取文件失敗：{str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
+        
+        # 查看已保存的記錄
+        st.divider()
+        st.subheader("📂 已保存的記錄")
+        
+        orders_dir = Path("data/review_history/bingx/orders")
+        
+        if not orders_dir.exists():
+            st.info("還沒有保存任何記錄")
+        else:
+            # 統計文件
+            order_files = list(orders_dir.rglob("*.json"))
+            
+            if not order_files:
+                st.info("還沒有保存任何記錄")
+            else:
+                st.write(f"**總文件數**：{len(order_files)}")
+                
+                # 讀取索引
+                order_index_file = Path("data/review_history/bingx/metadata/order_index.json")
+                
+                if order_index_file.exists():
+                    try:
+                        with open(order_index_file, 'r', encoding='utf-8') as f:
+                            index_data = json.load(f)
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.metric("總訂單數", index_data.get('total_orders', 0))
+                        
+                        with col2:
+                            st.write(f"**最後更新**")
+                            st.write(index_data.get('last_updated', 'N/A'))
+                    except:
+                        pass
+                
+                # 顯示最近的文件
+                st.write("**最近的文件**（最多顯示 10 個）：")
+                
+                recent_files = sorted(order_files, key=lambda x: x.stat().st_mtime, reverse=True)[:10]
+                
+                for file_path in recent_files:
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        
+                        rel_path = file_path.relative_to(orders_dir)
+                        st.write(f"- `{rel_path}` ({len(data)} 筆訂單)")
+                    except:
+                        pass
+        st.subheader("📝 交易記錄管理")
+        
+        st.info("""
+        **功能說明**：
+        - 上傳 BingX 匯出的文件（Excel 或 CSV）
+        - 自動轉換成統一的 JSON 格式
+        - 支持按天/週/月分組保存
+        - 目前支援：BingX（未來可擴展其他交易所）
+        """)
+        
+        # 選擇文件類型
+        file_type = st.radio(
+            "選擇文件類型",
+            ["Order_History（訂單記錄）", "Transaction_History（資金流水）"]
+        )
+        
+        # 上傳文件
+        uploaded_file = st.file_uploader(
+            "上傳 BingX 文件（Excel 或 CSV）",
+            type=['xlsx', 'xls', 'csv'],
+            help="從 BingX 匯出的 Order_History 或 Transaction_History 文件"
+        )
+        
+        if uploaded_file is not None:
+            try:
+                # 檢測文件的真實類型（不只看副檔名）
+                uploaded_file.seek(0)
+                file_header = uploaded_file.read(4)
+                uploaded_file.seek(0)
+                
+                # 判斷是否為 ZIP/Excel 格式（PK 開頭）
+                is_excel = file_header[:2] == b'PK'
+                
+                file_extension = uploaded_file.name.split('.')[-1].lower()
+                
+                # 如果文件頭是 PK，強制當作 Excel 處理
+                if is_excel:
+                    st.info(f"📌 檢測到文件實際為 Excel 格式（即使副檔名是 .{file_extension}）")
+                    file_extension = 'xlsx'
+                
+                # 根據文件類型讀取
+                if file_extension == 'csv':
+                    # CSV 格式（單一工作表）
+                    # 嘗試多種編碼
+                    encodings = ['utf-8', 'utf-8-sig', 'big5', 'gb2312', 'gbk', 'gb18030', 'latin1', 'cp1252', 'iso-8859-1']
+                    df = None
+                    used_encoding = None
+                    last_error = None
+                    
+                    for encoding in encodings:
+                        try:
+                            uploaded_file.seek(0)  # 重置文件指針
+                            df = pd.read_csv(uploaded_file, encoding=encoding)
+                            used_encoding = encoding
+                            break
+                        except (UnicodeDecodeError, UnicodeError) as e:
+                            last_error = str(e)
+                            continue
+                        except Exception as e:
+                            last_error = str(e)
+                            continue
+                    
+                    if df is None:
+                        st.error("❌ 無法讀取 CSV 文件，嘗試了多種編碼都失敗")
+                        st.info("支持的編碼：UTF-8, Big5, GB2312, GBK, GB18030, Latin1, CP1252")
+                        if last_error:
+                            st.code(f"最後的錯誤：{last_error}")
+                        
+                        # 提供手動選擇編碼的選項
+                        st.write("---")
+                        st.write("**手動選擇編碼**：")
+                        manual_encoding = st.selectbox(
+                            "選擇編碼",
+                            ['utf-8', 'utf-8-sig', 'big5', 'gb2312', 'gbk', 'gb18030', 'latin1', 'cp1252', 'iso-8859-1', 'shift-jis', 'euc-kr']
+                        )
+                        
+                        if st.button("使用選擇的編碼重試"):
+                            try:
+                                uploaded_file.seek(0)
+                                df = pd.read_csv(uploaded_file, encoding=manual_encoding)
+                                used_encoding = manual_encoding
+                                st.success(f"✅ 使用 {manual_encoding} 編碼成功！")
+                            except Exception as e:
+                                st.error(f"❌ 使用 {manual_encoding} 編碼失敗：{str(e)}")
+                        
+                        all_data = None  # 設置為 None 避免後續錯誤
+                    else:
+                        st.success(f"✅ 成功載入 CSV 文件：{uploaded_file.name}")
+                        st.caption(f"使用編碼：{used_encoding}")
+                        st.write(f"**記錄數**：{len(df)}")
+                        
+                        # 添加帳戶類型標記（從文件名推斷）
+                        if 'Standard' in uploaded_file.name or 'standard' in uploaded_file.name:
+                            df['account_type'] = 'Standard_Futures'
+                        elif 'Perpetual' in uploaded_file.name or 'perpetual' in uploaded_file.name or 'USDⓈ' in uploaded_file.name:
+                            df['account_type'] = 'USDⓢ_M_Perpetual_Futures'
+                        elif 'Fund' in uploaded_file.name or 'fund' in uploaded_file.name:
+                            df['account_type'] = 'Fund_Account'
+                        else:
+                            df['account_type'] = 'Unknown'
+                        
+                        all_data = [df]
+                        combined_df = df
+                        tab_summary = [{
+                            '來源': 'CSV',
+                            '記錄數': len(df),
+                            '帳戶類型': df['account_type'].iloc[0] if len(df) > 0 else 'Unknown'
+                        }]
+                
+                else:
+                    # Excel 格式（可能有多個工作表）
+                    xl = pd.ExcelFile(uploaded_file)
+                    
+                    st.success(f"✅ 成功載入 Excel 文件：{uploaded_file.name}")
+                    st.write(f"**工作表數量**：{len(xl.sheet_names)}")
+                    st.write(f"**工作表名稱**：{', '.join(xl.sheet_names)}")
+                    
+                    # 讀取所有 tabs
+                    all_data = []
+                    tab_summary = []
+                    
+                    for sheet_name in xl.sheet_names:
+                        df = pd.read_excel(uploaded_file, sheet_name=sheet_name)
+                        if len(df) > 0:
+                            df['account_type'] = sheet_name  # 添加帳戶類型標記
+                            all_data.append(df)
+                            tab_summary.append({
+                                '工作表': sheet_name,
+                                '記錄數': len(df)
+                            })
+                    
+                    if not all_data:
+                        st.warning("⚠️ 所有工作表都是空的")
+                        all_data = None
+                    else:
+                        # 合併所有數據
+                        combined_df = pd.concat(all_data, ignore_index=True)
+                
+                if all_data:
+                    # 顯示摘要
+                    st.subheader("📊 數據摘要")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write(f"**總記錄數**：{len(combined_df)}")
+                        st.write(f"**欄位數**：{len(combined_df.columns)}")
+                    
+                    with col2:
+                        summary_df = pd.DataFrame(tab_summary)
+                        st.dataframe(summary_df, use_container_width=True)
+                    
+                    # 顯示數據預覽
+                    st.subheader("📋 數據預覽（前 10 筆）")
+                    st.dataframe(combined_df.head(10), use_container_width=True)
+                    
+                    # 轉換選項
+                    st.divider()
+                    st.subheader("🔄 轉換為標準格式")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        save_format = st.selectbox(
+                            "保存格式",
+                            ["按天分組", "按週分組", "按月分組", "全部保存到一個文件"]
+                        )
+                    
+                    with col2:
+                        st.write("**標準 JSON 格式包含**：")
+                        if "Order_History" in file_type:
+                            st.write("- date, symbol, side")
+                            st.write("- entry_price, exit_price")
+                            st.write("- quantity, pnl, fee")
+                            st.write("- account_type, leverage")
+                        else:
+                            st.write("- date, type, asset")
+                            st.write("- amount, balance")
+                            st.write("- account_type, info")
+                    
+                    if st.button("🔄 轉換並保存", type="primary"):
+                        try:
+                            # 創建目錄
+                            review_dir = Path("data/review_history")
+                            review_dir.mkdir(parents=True, exist_ok=True)
+                            
+                            # 根據文件類型轉換
+                            if "Order_History" in file_type:
+                                # 訂單記錄格式
+                                trades_list = []
+                                
+                                for _, row in combined_df.iterrows():
+                                    trade = {
+                                        'date': str(row.get('closeTime(UTC+8)', row.get('openTime(UTC+8)', ''))),
+                                        'symbol': str(row.get('symbol', '')),
+                                        'side': str(row.get('side', '')),
+                                        'entry_price': float(row.get('openPrice', 0)),
+                                        'exit_price': float(row.get('closePrice', 0)),
+                                        'quantity': float(row.get('quantity', 0)),
+                                        'pnl': float(row.get('Realized PNL', 0)),
+                                        'fee': float(row.get('fees', 0)),
+                                        'account_type': str(row.get('account_type', '')),
+                                        'leverage': float(row.get('leverage', 1)),
+                                        'open_time': str(row.get('openTime(UTC+8)', '')),
+                                        'close_time': str(row.get('closeTime(UTC+8)', ''))
+                                    }
+                                    trades_list.append(trade)
+                            
+                            else:
+                                # 資金流水格式
+                                trades_list = []
+                                
+                                for _, row in combined_df.iterrows():
+                                    trade = {
+                                        'date': str(row.get('time(UTC+8)', '')),
+                                        'type': str(row.get('type', '')),
+                                        'asset': str(row.get('asset', '')),
+                                        'amount': float(row.get('amount', 0)),
+                                        'balance': float(row.get('balance', 0)),
+                                        'account_type': str(row.get('account_type', '')),
+                                        'info': str(row.get('info', ''))
+                                    }
+                                    trades_list.append(trade)
+                            
+                            # 保存文件
+                            if save_format == "全部保存到一個文件":
+                                # 保存所有記錄到一個文件
+                                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                                file_prefix = "orders" if "Order_History" in file_type else "transactions"
+                                output_file = review_dir / f"{file_prefix}_bingx_{timestamp}.json"
+                                
+                                with open(output_file, 'w', encoding='utf-8') as f:
+                                    json.dump(trades_list, f, indent=2, ensure_ascii=False)
+                                
+                                st.success(f"✅ 已保存 {len(trades_list)} 筆記錄到：")
+                                st.code(str(output_file))
+                            
+                            else:
+                                # 按時間分組保存
+                                if "Order_History" in file_type:
+                                    time_col = 'close_time'
+                                else:
+                                    time_col = 'date'
+                                
+                                # 轉換為 DataFrame 以便分組
+                                trades_df = pd.DataFrame(trades_list)
+                                trades_df['datetime'] = pd.to_datetime(trades_df[time_col], errors='coerce')
+                                
+                                # 移除無效日期
+                                trades_df = trades_df.dropna(subset=['datetime'])
+                                
+                                if len(trades_df) == 0:
+                                    st.error("❌ 無法解析日期，請檢查數據格式")
+                                else:
+                                    if save_format == "按天分組":
+                                        trades_df['period'] = trades_df['datetime'].dt.date
+                                    elif save_format == "按週分組":
+                                        trades_df['period'] = trades_df['datetime'].dt.to_period('W')
+                                    else:  # 按月分組
+                                        trades_df['period'] = trades_df['datetime'].dt.to_period('M')
+                                    
+                                    # 分組保存
+                                    saved_files = []
+                                    for period, group in trades_df.groupby('period'):
+                                        period_trades = group.drop(['datetime', 'period'], axis=1).to_dict('records')
+                                        
+                                        file_prefix = "orders" if "Order_History" in file_type else "transactions"
+                                        output_file = review_dir / f"{file_prefix}_bingx_{period}.json"
+                                        
+                                        with open(output_file, 'w', encoding='utf-8') as f:
+                                            json.dump(period_trades, f, indent=2, ensure_ascii=False)
+                                        
+                                        saved_files.append({
+                                            '文件': output_file.name,
+                                            '記錄數': len(period_trades)
+                                        })
+                                    
+                                    st.success(f"✅ 已保存 {len(saved_files)} 個文件：")
+                                    st.dataframe(pd.DataFrame(saved_files), use_container_width=True)
+                            
+                            # 顯示示例數據
+                            st.subheader("📄 轉換後的格式示例")
+                            st.json(trades_list[0] if trades_list else {})
+                        
+                        except Exception as e:
+                            st.error(f"❌ 轉換失敗：{str(e)}")
+                            import traceback
+                            st.code(traceback.format_exc())
+            
+            except Exception as e:
+                st.error(f"❌ 讀取文件失敗：{str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
+        
+        # 查看已保存的記錄
+        st.divider()
+        st.subheader("📂 已保存的記錄")
+        
+        review_dir = Path("data/review_history")
+        
+        if not review_dir.exists():
+            st.info("還沒有保存任何記錄")
+        else:
+            # 查找所有記錄文件
+            order_files = list(review_dir.glob("orders_bingx_*.json"))
+            trans_files = list(review_dir.glob("transactions_bingx_*.json"))
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write(f"**訂單記錄**：{len(order_files)} 個文件")
+                if order_files:
+                    for f in sorted(order_files, reverse=True)[:5]:
+                        st.write(f"- {f.name}")
+            
+            with col2:
+                st.write(f"**資金流水**：{len(trans_files)} 個文件")
+                if trans_files:
+                    for f in sorted(trans_files, reverse=True)[:5]:
+                        st.write(f"- {f.name}")
+            
+            # 查看文件內容
+            all_files = order_files + trans_files
+            
+            if all_files:
+                st.write("---")
+                selected_file = st.selectbox(
+                    "選擇文件查看內容",
+                    sorted(all_files, reverse=True),
+                    format_func=lambda x: x.name
+                )
+                
+                if selected_file:
+                    try:
+                        with open(selected_file, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        
+                        st.write(f"**記錄數**：{len(data)}")
+                        
+                        # 轉換為 DataFrame 顯示
+                        df = pd.DataFrame(data)
+                        st.dataframe(df, use_container_width=True, height=300)
+                        
+                        # 下載按鈕
+                        csv = df.to_csv(index=False, encoding='utf-8-sig')
+                        st.download_button(
+                            label="📥 下載 CSV",
+                            data=csv,
+                            file_name=f"{selected_file.stem}.csv",
+                            mime="text/csv"
+                        )
+                    
+                    except Exception as e:
+                        st.error(f"❌ 讀取失敗：{str(e)}")
+    
+    elif sub_function == "執行質量評分":
+        st.subheader("⭐ 執行質量評分")
+        
+        # 檢查質量評分記錄
+        quality_file = Path("data/review_history/quality_scores.json")
+        
+        if not quality_file.exists():
+            st.warning("⚠️ 沒有找到質量評分記錄")
+            st.info("""
+            **執行質量評分**用於評估交易執行的質量，包括：
+            - 進場時機
+            - 出場時機
+            - 風險管理
+            - 紀律遵守
+            
+            使用覆盤系統來記錄和評分：
+            ```python
+            python3 example_review_system.py
+            ```
+            """)
+        else:
+            try:
+                with open(quality_file, 'r', encoding='utf-8') as f:
+                    scores = json.load(f)
+                
+                if not scores:
+                    st.info("✅ 目前沒有質量評分記錄")
+                else:
+                    st.write(f"**總評分記錄數**：{len(scores)}")
+                    
+                    # 轉換為 DataFrame
+                    scores_df = pd.DataFrame(scores)
+                    
+                    # 計算平均分
+                    if 'total_score' in scores_df.columns:
+                        avg_score = scores_df['total_score'].mean()
+                        
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.metric("平均總分", f"{avg_score:.2f}")
+                        
+                        with col2:
+                            if 'entry_score' in scores_df.columns:
+                                avg_entry = scores_df['entry_score'].mean()
+                                st.metric("平均進場分", f"{avg_entry:.2f}")
+                        
+                        with col3:
+                            if 'exit_score' in scores_df.columns:
+                                avg_exit = scores_df['exit_score'].mean()
+                                st.metric("平均出場分", f"{avg_exit:.2f}")
+                    
+                    # 顯示評分列表
+                    st.subheader("📊 評分列表")
+                    st.dataframe(scores_df, use_container_width=True, height=400)
+                    
+                    # 評分趨勢圖
+                    if 'date' in scores_df.columns and 'total_score' in scores_df.columns:
+                        st.subheader("📈 評分趨勢")
+                        fig = px.line(scores_df, x='date', y='total_score',
+                                     title='執行質量評分趨勢',
+                                     labels={'date': '日期', 'total_score': '總分'})
+                        st.plotly_chart(fig, use_container_width=True)
+            
+            except Exception as e:
+                st.error(f"❌ 讀取質量評分失敗：{str(e)}")
+    
+    else:  # 覆盤報告
+        st.subheader("📄 覆盤報告")
+        
+        # 檢查報告文件
+        reports_dir = Path("data/review_history/reports")
+        
+        if not reports_dir.exists():
+            st.warning("⚠️ 沒有找到覆盤報告")
+            st.info("""
+            **覆盤報告**包含：
+            - 每日/週/月交易總結
+            - 績效分析
+            - 改進建議
+            - 技能追蹤
+            
+            使用覆盤系統生成報告：
+            ```python
+            python3 example_review_system.py
+            ```
+            """)
+        else:
+            report_files = list(reports_dir.glob("*.json"))
+            
+            if not report_files:
+                st.info("✅ 目前沒有覆盤報告")
+            else:
+                st.write(f"**報告數量**：{len(report_files)}")
+                
+                # 選擇報告
+                selected_report = st.selectbox(
+                    "選擇報告",
+                    report_files,
+                    format_func=lambda x: x.stem
+                )
+                
+                # 讀取報告
+                try:
+                    with open(selected_report, 'r', encoding='utf-8') as f:
+                        report = json.load(f)
+                    
+                    # 顯示報告信息
+                    st.subheader("📋 報告信息")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write(f"**報告類型**：{report.get('type', 'N/A')}")
+                        st.write(f"**時間範圍**：{report.get('start_date', 'N/A')} 至 {report.get('end_date', 'N/A')}")
+                    
+                    with col2:
+                        st.write(f"**總交易數**：{report.get('total_trades', 0)}")
+                        st.write(f"**勝率**：{report.get('win_rate', 0):.2f}%")
+                    
+                    # 顯示績效指標
+                    if 'performance' in report:
+                        st.subheader("📈 績效指標")
+                        perf = report['performance']
+                        
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.write(f"**總損益**：{perf.get('total_pnl', 0):.2f} USDT")
+                            st.write(f"**平均獲利**：{perf.get('avg_win', 0):.2f} USDT")
+                        
+                        with col2:
+                            st.write(f"**平均虧損**：{perf.get('avg_loss', 0):.2f} USDT")
+                            st.write(f"**獲利因子**：{perf.get('profit_factor', 0):.2f}")
+                        
+                        with col3:
+                            st.write(f"**最大回撤**：{perf.get('max_drawdown', 0):.2f}%")
+                            st.write(f"**夏普比率**：{perf.get('sharpe_ratio', 0):.2f}")
+                    
+                    # 顯示改進建議
+                    if 'recommendations' in report:
+                        st.subheader("💡 改進建議")
+                        for rec in report['recommendations']:
+                            st.write(f"- {rec}")
+                    
+                    # 顯示完整報告
+                    with st.expander("📄 查看完整報告（JSON）"):
+                        st.json(report)
+                
+                except Exception as e:
+                    st.error(f"❌ 讀取報告失敗：{str(e)}")
+
+# ==================== 7. 策略管理 ====================
+elif category == "7️⃣ 策略管理":
+    st.header("⚙️ 策略管理")
+    
+    sub_function = st.sidebar.selectbox(
+        "選擇功能",
+        [
+            "策略列表",
+            "策略配置查看",
+            "策略啟用/禁用",
+            "策略版本管理"
+        ]
+    )
+    
+    if sub_function == "策略啟用/禁用":
+        st.subheader("⚙️ 策略啟用/禁用")
+        
+        strategy_files = glob.glob('strategies/*.json')
+        
+        if not strategy_files:
+            st.warning("⚠️ 沒有找到策略配置文件")
+        else:
+            st.write("**所有策略狀態**")
+            
+            # 讀取所有策略狀態
+            strategies_status = []
+            
+            for strategy_file in strategy_files:
+                with open(strategy_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                
+                strategies_status.append({
+                    'file': strategy_file,
+                    'name': config.get('name', 'Unknown'),
+                    'id': config.get('id', 'unknown'),
+                    'enabled': config.get('enabled', False),
+                    'version': config.get('version', '1.0.0')
+                })
+            
+            # 顯示策略列表
+            for i, strategy in enumerate(strategies_status):
+                col1, col2, col3, col4 = st.columns([3, 2, 1, 2])
+                
+                with col1:
+                    st.write(f"**{strategy['name']}**")
+                    st.caption(f"ID: {strategy['id']}")
+                
+                with col2:
+                    st.write(f"版本: {strategy['version']}")
+                
+                with col3:
+                    if strategy['enabled']:
+                        st.success("✅ 啟用")
+                    else:
+                        st.error("❌ 禁用")
+                
+                with col4:
+                    # 切換按鈕
+                    new_status = st.checkbox(
+                        "啟用" if not strategy['enabled'] else "禁用",
+                        key=f"toggle_{i}",
+                        value=strategy['enabled']
+                    )
+                    
+                    # 如果狀態改變，更新配置文件
+                    if new_status != strategy['enabled']:
+                        try:
+                            with open(strategy['file'], 'r', encoding='utf-8') as f:
+                                config = json.load(f)
+                            
+                            config['enabled'] = new_status
+                            
+                            with open(strategy['file'], 'w', encoding='utf-8') as f:
+                                json.dump(config, f, indent=2, ensure_ascii=False)
+                            
+                            st.success(f"✅ 已{'啟用' if new_status else '禁用'}策略：{strategy['name']}")
+                            st.rerun()
+                        
+                        except Exception as e:
+                            st.error(f"❌ 更新失敗：{str(e)}")
+                
+                st.divider()
+    
+    elif sub_function == "策略列表" or sub_function == "策略配置查看":
+        st.subheader("📋 策略配置")
+        
+        strategy_files = glob.glob('strategies/*.json')
+        
+        if not strategy_files:
+            st.warning("⚠️ 沒有找到策略配置文件")
+        else:
+            selected_strategy = st.selectbox(
+                "選擇策略",
+                strategy_files,
+                format_func=lambda x: x.replace('strategies/', '').replace('.json', '')
+            )
+            
+            with open(selected_strategy, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            st.subheader("📋 基本信息")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write(f"**策略名稱**：{config.get('name', 'Unknown')}")
+                st.write(f"**策略 ID**：{config.get('id', 'unknown')}")
+                st.write(f"**策略類型**：{config.get('class', 'Unknown')}")
+            
+            with col2:
+                status = "✅ 啟用" if config.get('enabled', False) else "❌ 禁用"
+                st.write(f"**狀態**：{status}")
+                st.write(f"**版本**：{config.get('version', '1.0.0')}")
+            
+            if 'parameters' in config:
+                st.subheader("🎛️ 策略參數")
+                params = config['parameters']
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.write("**技術指標**")
+                    st.write(f"- EMA 短期：{params.get('ema_short', 'N/A')}")
+                    st.write(f"- EMA 長期：{params.get('ema_long', 'N/A')}")
+                    st.write(f"- RSI 週期：{params.get('rsi_period', 'N/A')}")
+                    st.write(f"- ATR 週期：{params.get('atr_period', 'N/A')}")
+                
+                with col2:
+                    st.write("**進出場**")
+                    st.write(f"- 止損：{params.get('stop_loss_atr', 'N/A')} ATR")
+                    st.write(f"- 目標：{params.get('take_profit_atr', 'N/A')} ATR")
+                    st.write(f"- RSI 超賣：{params.get('rsi_oversold', 'N/A')}")
+                    st.write(f"- RSI 超買：{params.get('rsi_overbought', 'N/A')}")
+                
+                with col3:
+                    st.write("**週期**")
+                    timeframes = params.get('timeframes', [])
+                    for tf in timeframes:
+                        st.write(f"- {tf}")
+            
+            with st.expander("📄 查看完整配置（JSON）"):
+                st.json(config)
+
+# ==================== 8. 風險管理 ====================
+elif category == "8️⃣ 風險管理":
+    st.header("⚠️ 風險管理")
+    
+    sub_function = st.sidebar.selectbox(
+        "選擇功能",
+        [
+            "全局風險設置",
+            "策略級風險設置",
+            "風險事件記錄"
+        ]
+    )
+    
+    if sub_function == "全局風險設置":
+        st.subheader("🛡️ 全局風險設置")
+        
+        try:
+            import yaml
+            with open('system_config.yaml', 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            risk_config = config.get('risk', {})
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write("**全局限制**")
+                st.write(f"- 最大回撤：{risk_config.get('global_max_drawdown', 0)*100:.0f}%")
+                st.write(f"- 每日虧損限制：{risk_config.get('daily_loss_limit', 0)*100:.0f}%")
+                st.write(f"- 最大倉位：{risk_config.get('global_max_position', 0)*100:.0f}%")
+            
+            with col2:
+                st.write("**策略默認值**")
+                st.write(f"- 單策略最大倉位：{risk_config.get('default_max_position_per_strategy', 0)*100:.0f}%")
+                st.write(f"- 每日最大交易數：{risk_config.get('default_max_trades_per_day', 0)}")
+                st.write(f"- 最大連損：{risk_config.get('default_max_consecutive_losses', 0)}")
+            
+            with st.expander("📄 查看完整風險配置"):
+                st.json(risk_config)
+        
+        except Exception as e:
+            st.error(f"❌ 讀取配置失敗：{str(e)}")
+
+# ==================== 9. 數據管理 ====================
+elif category == "9️⃣ 數據管理":
+    st.header("💾 數據管理")
+    
+    sub_function = st.sidebar.selectbox(
+        "選擇功能",
+        [
+            "數據源設置",
+            "歷史數據下載",
+            "數據驗證"
+        ]
+    )
+    
+    if sub_function == "數據源設置":
+        st.subheader("🌐 數據源設置")
+        
+        try:
+            import yaml
+            with open('system_config.yaml', 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            data_config = config.get('data', {})
+            
+            st.write(f"**主數據源**：{data_config.get('primary_source', 'N/A')}")
+            st.write(f"**備用數據源**：{', '.join(data_config.get('backup_sources', []))}")
+            st.write(f"**緩存時間**：{data_config.get('cache_ttl', 0)} 秒")
+            
+            with st.expander("📄 查看完整數據配置"):
+                st.json(data_config)
+        
+        except Exception as e:
+            st.error(f"❌ 讀取配置失敗：{str(e)}")
+    
+    elif sub_function == "歷史數據下載":
+        st.subheader("📥 歷史數據下載")
+        st.info("💡 數據下載需要通過命令行：")
+        st.code("python3 fetch_market_data.py")
+
+# ==================== 10. 系統配置 ====================
+elif category == "🔟 系統配置":
+    st.header("🔧 系統配置")
+    
+    sub_function = st.sidebar.selectbox(
+        "選擇功能",
+        [
+            "系統信息",
+            "回測配置",
+            "通知配置",
+            "日誌配置"
+        ]
+    )
+    
+    try:
+        import yaml
+        with open('system_config.yaml', 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        
+        if sub_function == "系統信息":
+            st.subheader("ℹ️ 系統信息")
+            system_config = config.get('system', {})
+            
+            st.write(f"**系統名稱**：{system_config.get('name', 'N/A')}")
+            st.write(f"**版本**：{system_config.get('version', 'N/A')}")
+            st.write(f"**環境**：{system_config.get('environment', 'N/A')}")
+        
+        elif sub_function == "回測配置":
+            st.subheader("📊 回測配置")
+            backtest_config = config.get('backtest', {})
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write(f"**手續費**：{backtest_config.get('commission', 0)*100:.2f}%")
+                st.write(f"**滑點**：{backtest_config.get('slippage', 0)*100:.2f}%")
+            
+            with col2:
+                st.write(f"**初始資金**：{backtest_config.get('initial_capital', 0):.0f} USDT")
+                st.write(f"**無風險利率**：{backtest_config.get('risk_free_rate', 0)*100:.0f}%")
+            
+            with st.expander("📄 查看完整回測配置"):
+                st.json(backtest_config)
+        
+        elif sub_function == "通知配置":
+            st.subheader("📢 通知配置")
+            notif_config = config.get('notifications', {})
+            
+            telegram = notif_config.get('telegram', {})
+            st.write(f"**Telegram**：{'✅ 啟用' if telegram.get('enabled', False) else '❌ 禁用'}")
+            
+            email = notif_config.get('email', {})
+            st.write(f"**Email**：{'✅ 啟用' if email.get('enabled', False) else '❌ 禁用'}")
+            
+            webhook = notif_config.get('webhook', {})
+            st.write(f"**Webhook**：{'✅ 啟用' if webhook.get('enabled', False) else '❌ 禁用'}")
+        
+        elif sub_function == "日誌配置":
+            st.subheader("📝 日誌配置")
+            logging_config = config.get('logging', {})
+            
+            st.write(f"**日誌級別**：{logging_config.get('level', 'N/A')}")
+            st.write(f"**日誌文件**：{logging_config.get('file', 'N/A')}")
+            st.write(f"**最大大小**：{logging_config.get('max_bytes', 0) / 1024 / 1024:.0f} MB")
+            st.write(f"**備份數量**：{logging_config.get('backup_count', 0)}")
+    
+    except Exception as e:
+        st.error(f"❌ 讀取配置失敗：{str(e)}")
+
+# 底部信息
+st.sidebar.markdown("---")
+st.sidebar.info("""
+**系統信息**
+- 版本：2.0.0
+- 功能分類：10 大類
+- 總功能數：66 個
+""")
+
+st.sidebar.success("""
+**快速命令**
+```bash
+# 運行回測
+python3 backtest_multi_timeframe.py
+
+# 實盤交易
+python3 cli.py live --strategy xxx
+
+# 參數優化
+python3 cli.py optimize --strategy xxx
+```
+""")

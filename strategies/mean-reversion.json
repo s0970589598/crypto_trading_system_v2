@@ -1,0 +1,58 @@
+{
+  "strategy_id": "mean-reversion-v1",
+  "strategy_name": "均值回歸策略",
+  "version": "1.0.0",
+  "enabled": true,
+  "symbol": "BTCUSDT",
+  "timeframes": ["1h", "15m"],
+  
+  "description": "基於價格回歸均值的交易策略，適合震盪市場",
+  
+  "parameters": {
+    "sma_period": 20,
+    "deviation_threshold": 0.02,
+    "rsi_period": 14,
+    "rsi_oversold": 30,
+    "rsi_overbought": 70,
+    "bb_period": 20,
+    "bb_std": 2.0,
+    "reversion_threshold": 0.005,
+    "stop_loss_atr": 1.5,
+    "take_profit_atr": 2.0
+  },
+  
+  "risk_management": {
+    "position_size": 0.15,
+    "leverage": 3,
+    "max_trades_per_day": 4,
+    "max_consecutive_losses": 3,
+    "daily_loss_limit": 0.08
+  },
+  
+  "entry_conditions": [
+    "價格偏離 SMA 超過 2%",
+    "RSI 超買（>70）或超賣（<30）",
+    "價格觸及布林帶上軌或下軌",
+    "成交量正常（0.5x - 2.0x 平均成交量）"
+  ],
+  
+  "exit_conditions": {
+    "stop_loss": "entry_price ± (atr * 1.5)",
+    "take_profit": "entry_price ± (atr * 2.0)",
+    "mean_reversion": "價格回歸到 SMA 的 0.5% 範圍內",
+    "rsi_neutral": "RSI 回到 40-60 區間"
+  },
+  
+  "notifications": {
+    "telegram": true,
+    "email": false,
+    "webhook": null
+  },
+  
+  "notes": {
+    "適用市場": "震盪市場、低波動性環境",
+    "不適用市場": "強趨勢市場",
+    "風險等級": "中等",
+    "建議資金": "1000 USDT 以上"
+  }
+}

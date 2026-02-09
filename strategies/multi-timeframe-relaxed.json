@@ -1,0 +1,44 @@
+{
+  "strategy_id": "multi-timeframe-relaxed",
+  "strategy_name": "多週期共振策略（輕鬆模式）",
+  "version": "1.0.0",
+  "enabled": true,
+  "symbol": "ETHUSDT",
+  "timeframes": ["15m", "1h", "4h", "1d"],
+  
+  "parameters": {
+    "stop_loss_atr": 2.0,
+    "take_profit_atr": 4.0,
+    "rsi_range": [30, 70],
+    "ema_distance": 0.03,
+    "volume_threshold": 1.0
+  },
+  
+  "risk_management": {
+    "position_size": 0.20,
+    "leverage": 5,
+    "max_trades_per_day": 3,
+    "max_consecutive_losses": 3,
+    "daily_loss_limit": 0.10,
+    "stop_loss_atr": 2.0,
+    "take_profit_atr": 4.0
+  },
+  
+  "entry_conditions": [
+    "trend_4h == trend_1h",
+    "trend_4h in ['Uptrend', 'Downtrend']",
+    "30 <= rsi_15m <= 70",
+    "price_near_ema(0.03)",
+    "volume_ratio > 1.0"
+  ],
+  
+  "exit_conditions": {
+    "stop_loss": "entry_price - (atr * 2.0)",
+    "take_profit": "entry_price + (atr * 4.0)"
+  },
+  
+  "notifications": {
+    "telegram": true,
+    "email": false
+  }
+}

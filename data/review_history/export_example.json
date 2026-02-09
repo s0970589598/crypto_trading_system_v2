@@ -1,0 +1,302 @@
+{
+  "trades": [
+    {
+      "trade_id": "26551866-f9c3-4730-9adc-777517b9bb24",
+      "strategy_id": "multi-timeframe-v1",
+      "symbol": "BTCUSDT",
+      "direction": "long",
+      "entry_time": "2024-06-01T10:00:00",
+      "exit_time": "2024-06-01T14:30:00",
+      "entry_price": 68000.0,
+      "exit_price": 69500.0,
+      "size": 0.1,
+      "leverage": 5,
+      "pnl": 143.125,
+      "pnl_pct": 2.2058823529411686,
+      "commission": 6.875,
+      "exit_reason": "獲利",
+      "metadata": {
+        "stop_loss": 67000.0,
+        "take_profit": 70000.0
+      }
+    },
+    {
+      "trade_id": "1979b6f6-f17b-4513-bdce-b81030e70c18",
+      "strategy_id": "multi-timeframe-v1",
+      "symbol": "BTCUSDT",
+      "direction": "long",
+      "entry_time": "2024-06-01T10:00:00",
+      "exit_time": "2024-06-01T14:30:00",
+      "entry_price": 68000.0,
+      "exit_price": 69500.0,
+      "size": 0.1,
+      "leverage": 5,
+      "pnl": 143.125,
+      "pnl_pct": 2.2058823529411686,
+      "commission": 6.875,
+      "exit_reason": "獲利",
+      "metadata": {
+        "stop_loss": 67000.0,
+        "take_profit": 70000.0
+      }
+    },
+    {
+      "trade_id": "225f9c06-70e8-44ff-9360-5f004b73fd66",
+      "strategy_id": "multi-timeframe-v1",
+      "symbol": "ETHUSDT",
+      "direction": "long",
+      "entry_time": "2024-06-02T09:00:00",
+      "exit_time": "2024-06-02T10:15:00",
+      "entry_price": 3500.0,
+      "exit_price": 3450.0,
+      "size": 1.0,
+      "leverage": 5,
+      "pnl": -53.475,
+      "pnl_pct": -1.4285714285714235,
+      "commission": 3.475,
+      "exit_reason": "止損",
+      "metadata": {
+        "stop_loss": 3450.0,
+        "take_profit": 3600.0
+      }
+    },
+    {
+      "trade_id": "fb1e40c6-38f0-4b7a-b62e-226e443315fe",
+      "strategy_id": "multi-timeframe-v1",
+      "symbol": "ETHUSDT",
+      "direction": "long",
+      "entry_time": "2024-06-02T09:00:00",
+      "exit_time": "2024-06-02T10:15:00",
+      "entry_price": 3500.0,
+      "exit_price": 3450.0,
+      "size": 1.0,
+      "leverage": 5,
+      "pnl": -53.475,
+      "pnl_pct": -1.4285714285714235,
+      "commission": 3.475,
+      "exit_reason": "止損",
+      "metadata": {
+        "stop_loss": 3450.0,
+        "take_profit": 3600.0
+      }
+    },
+    {
+      "trade_id": "6141de96-0f54-42e8-b2b1-d528b5aab6df",
+      "strategy_id": "breakout-strategy",
+      "symbol": "BTCUSDT",
+      "direction": "short",
+      "entry_time": "2024-06-03T15:00:00",
+      "exit_time": "2024-06-03T16:30:00",
+      "entry_price": 69000.0,
+      "exit_price": 69200.0,
+      "size": 0.15,
+      "leverage": 3,
+      "pnl": -40.365,
+      "pnl_pct": -0.28901734104046506,
+      "commission": 10.365,
+      "exit_reason": "手動平倉",
+      "metadata": {
+        "stop_loss": 70000.0,
+        "take_profit": 67500.0
+      }
+    },
+    {
+      "trade_id": "462c90d7-3877-4de7-836f-f8ed586c675b",
+      "strategy_id": "breakout-strategy",
+      "symbol": "BTCUSDT",
+      "direction": "short",
+      "entry_time": "2024-06-03T15:00:00",
+      "exit_time": "2024-06-03T16:30:00",
+      "entry_price": 69000.0,
+      "exit_price": 69200.0,
+      "size": 0.15,
+      "leverage": 3,
+      "pnl": -40.365,
+      "pnl_pct": -0.28901734104046506,
+      "commission": 10.365,
+      "exit_reason": "手動平倉",
+      "metadata": {
+        "stop_loss": 70000.0,
+        "take_profit": 67500.0
+      }
+    },
+    {
+      "trade_id": "dd9af5b7-2e5e-4ff0-8be9-6e83037b3a19",
+      "strategy_id": "breakout-strategy",
+      "symbol": "ETHUSDT",
+      "direction": "long",
+      "entry_time": "2024-06-04T11:00:00",
+      "exit_time": "2024-06-04T18:00:00",
+      "entry_price": 3480.0,
+      "exit_price": 3620.0,
+      "size": 2.0,
+      "leverage": 5,
+      "pnl": 272.9,
+      "pnl_pct": 4.022988505747116,
+      "commission": 7.1000000000000005,
+      "exit_reason": "獲利",
+      "metadata": {
+        "stop_loss": 3400.0,
+        "take_profit": 3600.0
+      }
+    },
+    {
+      "trade_id": "0d23687d-8a9d-44e0-87e5-0147a7ac7fab",
+      "strategy_id": "breakout-strategy",
+      "symbol": "ETHUSDT",
+      "direction": "long",
+      "entry_time": "2024-06-04T11:00:00",
+      "exit_time": "2024-06-04T18:00:00",
+      "entry_price": 3480.0,
+      "exit_price": 3620.0,
+      "size": 2.0,
+      "leverage": 5,
+      "pnl": 272.9,
+      "pnl_pct": 4.022988505747116,
+      "commission": 7.1000000000000005,
+      "exit_reason": "獲利",
+      "metadata": {
+        "stop_loss": 3400.0,
+        "take_profit": 3600.0
+      }
+    }
+  ],
+  "notes": {
+    "26551866-f9c3-4730-9adc-777517b9bb24": [
+      {
+        "trade_id": "26551866-f9c3-4730-9adc-777517b9bb24",
+        "timestamp": "2026-01-22T20:36:44.490103",
+        "note": "完美的進場時機，趨勢確認後立即進場",
+        "tags": [
+          "good_entry",
+          "trend_following"
+        ]
+      }
+    ],
+    "225f9c06-70e8-44ff-9360-5f004b73fd66": [
+      {
+        "trade_id": "225f9c06-70e8-44ff-9360-5f004b73fd66",
+        "timestamp": "2026-01-22T20:36:44.490490",
+        "note": "止損設置合理，及時止損避免更大虧損",
+        "tags": [
+          "good_risk_management",
+          "stop_loss"
+        ]
+      }
+    ],
+    "6141de96-0f54-42e8-b2b1-d528b5aab6df": [
+      {
+        "trade_id": "6141de96-0f54-42e8-b2b1-d528b5aab6df",
+        "timestamp": "2026-01-22T20:36:44.491010",
+        "note": "過早平倉，應該等待止損或目標價",
+        "tags": [
+          "early_exit",
+          "needs_improvement"
+        ]
+      }
+    ],
+    "1979b6f6-f17b-4513-bdce-b81030e70c18": [
+      {
+        "trade_id": "1979b6f6-f17b-4513-bdce-b81030e70c18",
+        "timestamp": "2026-01-22T20:41:21.479185",
+        "note": "完美的進場時機，趨勢確認後立即進場",
+        "tags": [
+          "good_entry",
+          "trend_following"
+        ]
+      }
+    ],
+    "fb1e40c6-38f0-4b7a-b62e-226e443315fe": [
+      {
+        "trade_id": "fb1e40c6-38f0-4b7a-b62e-226e443315fe",
+        "timestamp": "2026-01-22T20:41:21.479833",
+        "note": "止損設置合理，及時止損避免更大虧損",
+        "tags": [
+          "good_risk_management",
+          "stop_loss"
+        ]
+      }
+    ],
+    "462c90d7-3877-4de7-836f-f8ed586c675b": [
+      {
+        "trade_id": "462c90d7-3877-4de7-836f-f8ed586c675b",
+        "timestamp": "2026-01-22T20:41:21.480613",
+        "note": "過早平倉，應該等待止損或目標價",
+        "tags": [
+          "early_exit",
+          "needs_improvement"
+        ]
+      }
+    ]
+  },
+  "quality_scores": {
+    "26551866-f9c3-4730-9adc-777517b9bb24": {
+      "trade_id": "26551866-f9c3-4730-9adc-777517b9bb24",
+      "overall_score": 100.0,
+      "entry_quality": 100.0,
+      "exit_quality": 100.0,
+      "risk_management": 100.0,
+      "errors": []
+    },
+    "225f9c06-70e8-44ff-9360-5f004b73fd66": {
+      "trade_id": "225f9c06-70e8-44ff-9360-5f004b73fd66",
+      "overall_score": 100.0,
+      "entry_quality": 100.0,
+      "exit_quality": 100.0,
+      "risk_management": 100.0,
+      "errors": []
+    },
+    "6141de96-0f54-42e8-b2b1-d528b5aab6df": {
+      "trade_id": "6141de96-0f54-42e8-b2b1-d528b5aab6df",
+      "overall_score": 91.66666666666667,
+      "entry_quality": 100.0,
+      "exit_quality": 75.0,
+      "risk_management": 100.0,
+      "errors": [
+        "可能讓獲利變成虧損"
+      ]
+    },
+    "dd9af5b7-2e5e-4ff0-8be9-6e83037b3a19": {
+      "trade_id": "dd9af5b7-2e5e-4ff0-8be9-6e83037b3a19",
+      "overall_score": 100.0,
+      "entry_quality": 100.0,
+      "exit_quality": 100.0,
+      "risk_management": 100.0,
+      "errors": []
+    },
+    "1979b6f6-f17b-4513-bdce-b81030e70c18": {
+      "trade_id": "1979b6f6-f17b-4513-bdce-b81030e70c18",
+      "overall_score": 100.0,
+      "entry_quality": 100.0,
+      "exit_quality": 100.0,
+      "risk_management": 100.0,
+      "errors": []
+    },
+    "fb1e40c6-38f0-4b7a-b62e-226e443315fe": {
+      "trade_id": "fb1e40c6-38f0-4b7a-b62e-226e443315fe",
+      "overall_score": 100.0,
+      "entry_quality": 100.0,
+      "exit_quality": 100.0,
+      "risk_management": 100.0,
+      "errors": []
+    },
+    "462c90d7-3877-4de7-836f-f8ed586c675b": {
+      "trade_id": "462c90d7-3877-4de7-836f-f8ed586c675b",
+      "overall_score": 91.66666666666667,
+      "entry_quality": 100.0,
+      "exit_quality": 75.0,
+      "risk_management": 100.0,
+      "errors": [
+        "可能讓獲利變成虧損"
+      ]
+    },
+    "0d23687d-8a9d-44e0-87e5-0147a7ac7fab": {
+      "trade_id": "0d23687d-8a9d-44e0-87e5-0147a7ac7fab",
+      "overall_score": 100.0,
+      "entry_quality": 100.0,
+      "exit_quality": 100.0,
+      "risk_management": 100.0,
+      "errors": []
+    }
+  }
+}

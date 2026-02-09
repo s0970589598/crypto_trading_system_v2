@@ -1,0 +1,242 @@
+[
+  {
+    "trade_id": "26551866-f9c3-4730-9adc-777517b9bb24",
+    "overall_score": 100.0,
+    "entry_quality": 100.0,
+    "exit_quality": 100.0,
+    "risk_management": 100.0,
+    "errors": []
+  },
+  {
+    "trade_id": "225f9c06-70e8-44ff-9360-5f004b73fd66",
+    "overall_score": 100.0,
+    "entry_quality": 100.0,
+    "exit_quality": 100.0,
+    "risk_management": 100.0,
+    "errors": []
+  },
+  {
+    "trade_id": "6141de96-0f54-42e8-b2b1-d528b5aab6df",
+    "overall_score": 91.66666666666667,
+    "entry_quality": 100.0,
+    "exit_quality": 75.0,
+    "risk_management": 100.0,
+    "errors": [
+      "可能讓獲利變成虧損"
+    ]
+  },
+  {
+    "trade_id": "dd9af5b7-2e5e-4ff0-8be9-6e83037b3a19",
+    "overall_score": 100.0,
+    "entry_quality": 100.0,
+    "exit_quality": 100.0,
+    "risk_management": 100.0,
+    "errors": []
+  },
+  {
+    "trade_id": "1979b6f6-f17b-4513-bdce-b81030e70c18",
+    "overall_score": 100.0,
+    "entry_quality": 100.0,
+    "exit_quality": 100.0,
+    "risk_management": 100.0,
+    "errors": []
+  },
+  {
+    "trade_id": "fb1e40c6-38f0-4b7a-b62e-226e443315fe",
+    "overall_score": 100.0,
+    "entry_quality": 100.0,
+    "exit_quality": 100.0,
+    "risk_management": 100.0,
+    "errors": []
+  },
+  {
+    "trade_id": "462c90d7-3877-4de7-836f-f8ed586c675b",
+    "overall_score": 91.66666666666667,
+    "entry_quality": 100.0,
+    "exit_quality": 75.0,
+    "risk_management": 100.0,
+    "errors": [
+      "可能讓獲利變成虧損"
+    ]
+  },
+  {
+    "trade_id": "0d23687d-8a9d-44e0-87e5-0147a7ac7fab",
+    "overall_score": 100.0,
+    "entry_quality": 100.0,
+    "exit_quality": 100.0,
+    "risk_management": 100.0,
+    "errors": []
+  },
+  {
+    "trade_id": "bingx_2019231823394197505",
+    "order_no": "2019231823394197505",
+    "date": "2026-02-05",
+    "symbol": "NCCOGOLD2USD-USDT",
+    "direction": "Long",
+    "pnl": -3.7807,
+    "entry_score": 100.0,
+    "exit_score": 100.0,
+    "risk_score": 70.0,
+    "discipline_score": 100.0,
+    "total_score": 92.5,
+    "note": "自動評分。 發現問題：槓桿過高",
+    "tags": [
+      "auto_scored",
+      "槓桿過高"
+    ],
+    "scored_at": "2026-02-05 19:12:20",
+    "scoring_mode": "auto"
+  },
+  {
+    "trade_id": "bingx_2019231823394197505",
+    "order_no": "2019231823394197505",
+    "date": "2026-02-05",
+    "symbol": "NCCOGOLD2USD-USDT",
+    "direction": "Long",
+    "pnl": -3.7807,
+    "entry_score": 100.0,
+    "exit_score": 100.0,
+    "risk_score": 70.0,
+    "discipline_score": 100.0,
+    "total_score": 92.5,
+    "note": "自動評分。 發現問題：槓桿過高",
+    "tags": [
+      "auto_scored",
+      "槓桿過高"
+    ],
+    "scored_at": "2026-02-05 19:13:28",
+    "scoring_mode": "auto"
+  },
+  {
+    "trade_id": "bingx_2018753821824733185",
+    "order_no": "2018753821824733185",
+    "date": "2026-02-04",
+    "symbol": "NCCOGOLD2USD-USDT",
+    "direction": "Long",
+    "pnl": -7.5435,
+    "entry_score": 100.0,
+    "exit_score": 100.0,
+    "risk_score": 70.0,
+    "discipline_score": 100.0,
+    "total_score": 92.5,
+    "note": "自動評分。 發現問題：槓桿過高",
+    "tags": [
+      "auto_scored",
+      "槓桿過高"
+    ],
+    "scored_at": "2026-02-05 19:13:28",
+    "scoring_mode": "auto"
+  },
+  {
+    "trade_id": "bingx_2019231823394197505",
+    "order_no": "2019231823394197505",
+    "date": "2026-02-05",
+    "symbol": "NCCOGOLD2USD-USDT",
+    "direction": "Long",
+    "pnl": -3.7807,
+    "entry_score": 70.0,
+    "exit_score": 100.0,
+    "risk_score": 60.0,
+    "discipline_score": 85.0,
+    "total_score": 78.75,
+    "note": "自動評分（持倉0.0小時，盈虧-0.12%）。 發現問題：槓桿極高（>100x），風險過大、持倉時間極短（<6分鐘），過度交易",
+    "tags": [
+      "auto_scored",
+      "槓桿極高（>100x），風險過大",
+      "持倉時間極短（<6分鐘），過度交易"
+    ],
+    "scored_at": "2026-02-05 19:16:19",
+    "scoring_mode": "auto"
+  },
+  {
+    "trade_id": "bingx_2019231823394197505",
+    "order_no": "2019231823394197505",
+    "date": "2026-02-05",
+    "symbol": "NCCOGOLD2USD-USDT",
+    "direction": "Long",
+    "pnl": -3.7807,
+    "entry_score": 70.0,
+    "exit_score": 100.0,
+    "risk_score": 60.0,
+    "discipline_score": 85.0,
+    "total_score": 78.75,
+    "note": "自動評分（持倉0.0小時，盈虧-0.12%）。 發現問題：槓桿極高（>100x），風險過大、持倉時間極短（<6分鐘），過度交易",
+    "tags": [
+      "auto_scored",
+      "槓桿極高（>100x），風險過大",
+      "持倉時間極短（<6分鐘），過度交易"
+    ],
+    "scored_at": "2026-02-05 19:23:51",
+    "scoring_mode": "auto",
+    "market_analysis": null
+  },
+  {
+    "trade_id": "bingx_1531554073100132355",
+    "order_no": "1531554073100132355",
+    "date": "2026-01-21",
+    "symbol": "eth",
+    "direction": "Long",
+    "pnl": 0.68032904,
+    "entry_score": 100.0,
+    "exit_score": 65.0,
+    "risk_score": 90.0,
+    "discipline_score": 85.0,
+    "total_score": 85.0,
+    "note": "自動評分（持倉0.2小時，盈虧0.21%）。 發現問題：獲利太少即出場（<0.5%）、持倉時間過短（<30分鐘），可能是搶帽子、獲利太少即手動平倉，缺乏耐心",
+    "tags": [
+      "auto_scored",
+      "獲利太少即出場（<0.5%）",
+      "持倉時間過短（<30分鐘），可能是搶帽子",
+      "獲利太少即手動平倉，缺乏耐心"
+    ],
+    "scored_at": "2026-02-05 19:24:41",
+    "scoring_mode": "auto",
+    "market_analysis": null
+  },
+  {
+    "trade_id": "bingx_1532058786799263745",
+    "order_no": "1532058786799263745",
+    "date": "2026-01-23",
+    "symbol": "btc",
+    "direction": "Long",
+    "pnl": 0.18748644,
+    "entry_score": 90.0,
+    "exit_score": 75.0,
+    "risk_score": 65.0,
+    "discipline_score": 85.0,
+    "total_score": 78.75,
+    "note": "【交易概況】持倉0.8小時，盈虧0.03%，槓桿50.0x。\n\n【發現問題】\n1. 槓桿偏高（>20x）\n2. 獲利太少即出場（<0.5%）\n3. 手續費佔盈虧172.6%，過度交易\n4. 獲利太少即手動平倉，缺乏耐心",
+    "tags": [
+      "auto_scored",
+      "槓桿偏高（>20x）",
+      "獲利太少即出場（<0.5%）",
+      "手續費佔盈虧172.6%，過度交易",
+      "獲利太少即手動平倉，缺乏耐心"
+    ],
+    "scored_at": "2026-02-05 19:30:58",
+    "scoring_mode": "auto",
+    "market_analysis": null
+  },
+  {
+    "trade_id": "bingx_1531554073100132355",
+    "order_no": "1531554073100132355",
+    "date": "2026-01-21",
+    "symbol": "eth",
+    "direction": "Long",
+    "pnl": 0.68032904,
+    "entry_score": 100,
+    "exit_score": 65.0,
+    "risk_score": 90.0,
+    "discipline_score": 85.0,
+    "total_score": 85.0,
+    "note": "【交易概況】持倉0.2小時，盈虧0.21%，槓桿20.0x。\n\n【市場數據】\n• 價格：3010.52\n• 開盤：3031.47\n• 最高：3045.01\n• 最低：3009.10\n\n【技術指標】\n• SMA7: 2978.90\n• SMA25: 2968.22\n• SMA99: 3154.78\n• RSI: 55.0 (neutral)\n• MACD: -5.68 / Signal: -20.78 (bullish)\n• ATR: 53.37 (1.77%, normal)\n• 布林帶位置: upper_half\n• 成交量: 10684.02 (比率: 0.41x, low)\n\n【市場分析】\n• 趨勢：uptrend（強度：35.2/100）\n• 均線排列：mixed\n• 支撐位：2866.11 (距離：4.80%)\n• 阻力位：3225.43 (距離：7.14%)\n\n【多時區分析】\n• 1h: uptrend, RSI=55.0, MACD=bullish\n• 1d: unknown, RSI=31.7, MACD=death_cross\n\n【發現問題】\n1. 獲利太少即出場（<0.5%）\n2. 持倉時間過短（<30分鐘），可能是搶帽子\n3. 獲利太少即手動平倉，缺乏耐心",
+    "tags": [
+      "auto_scored",
+      "獲利太少即出場（<0.5%）",
+      "持倉時間過短（<30分鐘），可能是搶帽子",
+      "獲利太少即手動平倉，缺乏耐心"
+    ],
+    "scored_at": "2026-02-05 19:34:15",
+    "scoring_mode": "auto",
+    "market_analysis": {
+      "timestamp": 

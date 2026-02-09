@@ -1,0 +1,42 @@
+{
+  "strategy_id": "breakout-strategy",
+  "strategy_name": "突破策略",
+  "version": "1.0.0",
+  "enabled": true,
+  "symbol": "ETHUSDT",
+  "timeframes": ["1h"],
+  
+  "parameters": {
+    "lookback_period": 20,
+    "volume_threshold": 1.5,
+    "atr_threshold": 0.02,
+    "stop_loss_atr": 2.0,
+    "take_profit_atr": 4.0
+  },
+  
+  "risk_management": {
+    "position_size": 0.15,
+    "leverage": 5,
+    "max_trades_per_day": 3,
+    "max_consecutive_losses": 3,
+    "daily_loss_limit": 0.10,
+    "stop_loss_atr": 2.0,
+    "take_profit_atr": 4.0
+  },
+  
+  "entry_conditions": [
+    "price > high_20d OR price < low_20d",
+    "volume_ratio > 1.5",
+    "atr_pct > 0.02"
+  ],
+  
+  "exit_conditions": {
+    "stop_loss": "entry_price - (atr * 2.0)",
+    "take_profit": "entry_price + (atr * 4.0)"
+  },
+  
+  "notifications": {
+    "telegram": true,
+    "email": false
+  }
+}
