@@ -3875,11 +3875,49 @@ elif category == "6️⃣ 交易覆盤":
                                         )
                                         st.caption(f"{tilt_color} {tilt['severity']}")
                                     
+                                    # 新增：冷靜期和 Kelly Criterion
+                                    st.write("")  # 空行
+                                    st.write("**🆕 進階風險指標**")
+                                    
+                                    risk_col5, risk_col6 = st.columns(2)
+                                    
+                                    # 5. 冷靜期檢測
+                                    cooling = risk_officer.check_cooling_period()
+                                    with risk_col5:
+                                        if cooling['should_cool']:
+                                            severity_color = "🔴" if cooling['severity'] == 'critical' else "🟠" if cooling['severity'] == 'high' else "🟡"
+                                            st.metric(
+                                                "冷靜期建議",
+                                                f"需要休息",
+                                                delta=f"{cooling['duration_minutes']} 分鐘",
+                                                delta_color="inverse"
+                                            )
+                                            st.caption(f"{severity_color} {cooling['reason']}")
+                                        else:
+                                            st.metric(
+                                                "冷靜期建議",
+                                                "狀態正常",
+                                                delta="無需休息",
+                                                delta_color="normal"
+                                            )
+                                            st.caption("🟢 可以繼續交易")
+                                    
+                                    # 6. Kelly Criterion
+                                    kelly = risk_officer.calculate_ror_kelly()
+                                    with risk_col6:
+                                        kelly_color = "🔴" if kelly['kelly_optimal_size'] <= 0 else "🟡" if kelly['kelly_optimal_size'] < 0.1 else "🟢"
+                                        st.metric(
+                                            "Kelly 最優倉位",
+                                            f"{kelly['kelly_optimal_size']:.1%}",
+                                            delta=f"建議 {kelly['recommended_size']:.1%}",
+                                            delta_color="normal" if kelly['kelly_optimal_size'] > 0 else "inverse"
+                                        )
+                                        st.caption(f"{kelly_color} Half Kelly")
+                                    
                                     # 詳細分析（可展開）
                                     with st.expander("📊 查看詳細量化分析", expanded=False):
-                                        
                                         # Tab 分頁
-                                        tab1, tab2, tab3 = st.tabs(["💀 破產風險", "💰 手續費分析", "🎰 傾斜檢測"])
+                                        tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["💀 破產風險", "💰 手續費分析", "🎰 傾斜檢測", "🧘 冷靜期", "📐 Kelly 分析", "😤 情緒失控", "🎯 能力評分"])
                                         
                                         with tab1:
                                             st.write("**破產風險詳細分析**")
@@ -4014,6 +4052,353 @@ elif category == "6️⃣ 交易覆盤":
                                                 """)
                                             else:
                                                 st.success("✅ 未檢測到明顯的傾斜行為。")
+                                        
+                                        with tab4:
+                                            st.write("**冷靜期檢測**")
+                                            
+                                            if cooling['should_cool']:
+                                                # 顯示警告
+                                                if cooling['severity'] == 'critical':
+                                                    st.error(f"🔴 **緊急警告**：{cooling['reason']}")
+                                                elif cooling['severity'] == 'high':
+                                                    st.warning(f"🟠 **高度警告**：{cooling['reason']}")
+                                                else:
+                                                    st.warning(f"🟡 **注意**：{cooling['reason']}")
+                                                
+                                                # 顯示詳細信息
+                                                cool_col1, cool_col2, cool_col3 = st.columns(3)
+                                                
+                                                with cool_col1:
+                                                    st.metric("建議休息時間", f"{cooling['duration_minutes']} 分鐘")
+                                                
+                                                with cool_col2:
+                                                    st.metric("連續虧損", f"{cooling['consecutive_losses']} 次")
+                                                
+                                                with cool_col3:
+                                                    if cooling['max_daily_loss_pct'] < 0:
+                                                        st.metric("最大單日虧損", f"{abs(cooling['max_daily_loss_pct']):.2f}%")
+                                                    else:
+                                                        st.metric("傾斜嚴重度", cooling['tilt_severity'])
+                                                
+                                                # 建議
+                                                st.info(f"""
+                                                **💡 建議行動**：
+                                                - {cooling['recommendation']}
+                                                - 檢視最近的虧損交易，找出問題所在
+                                                - 考慮調整策略參數或暫停該策略
+                                                - 避免情緒化交易，保持冷靜
+                                                """)
+                                            else:
+                                                st.success("✅ 交易狀態正常，無需冷靜期")
+                                                
+                                                cool_col1, cool_col2 = st.columns(2)
+                                                
+                                                with cool_col1:
+                                                    st.metric("連續虧損", f"{cooling['consecutive_losses']} 次")
+                                                
+                                                with cool_col2:
+                                                    st.metric("傾斜嚴重度", cooling['tilt_severity'])
+                                        
+                                        with tab5:
+                                            st.write("**Kelly Criterion 分析**")
+                                            
+                                            # Kelly 指標
+                                            kelly_col1, kelly_col2, kelly_col3 = st.columns(3)
+                                            
+                                            with kelly_col1:
+                                                st.metric(
+                                                    "Kelly 破產風險",
+                                                    f"{kelly['kelly_ror']:.2%}",
+                                                    delta="基於 Kelly 公式"
+                                                )
+                                            
+                                            with kelly_col2:
+                                                st.metric(
+                                                    "Kelly 最優倉位",
+                                                    f"{kelly['kelly_optimal_size']:.2%}",
+                                                    delta=f"期望值 {kelly['expectancy']:.2f}"
+                                                )
+                                            
+                                            with kelly_col3:
+                                                st.metric(
+                                                    "建議倉位",
+                                                    f"{kelly['recommended_size']:.2%}",
+                                                    delta="Half Kelly（更保守）"
+                                                )
+                                            
+                                            # Kelly 公式說明
+                                            st.write("**📐 Kelly 公式**")
+                                            st.latex(r"f^* = \frac{bp - q}{b}")
+                                            
+                                            st.write("""
+                                            其中：
+                                            - f* = 最優倉位比例
+                                            - b = 賠率（平均獲利/平均虧損）
+                                            - p = 勝率
+                                            - q = 敗率（1 - p）
+                                            """)
+                                            
+                                            # 當前數據
+                                            st.write("**📊 當前數據**")
+                                            st.info(f"""
+                                            - 勝率：{kelly['win_rate']:.2%}
+                                            - 敗率：{kelly['loss_rate']:.2%}
+                                            - 平均獲利：{kelly['avg_win']:.2f} USDT
+                                            - 平均虧損：{kelly['avg_loss']:.2f} USDT
+                                            - 賠率：{kelly['payoff_ratio']:.2f}:1
+                                            - 期望值：{kelly['expectancy']:.2f} USDT/筆
+                                            """)
+                                            
+                                            # 建議
+                                            if kelly['kelly_optimal_size'] <= 0:
+                                                st.error("""
+                                                ⚠️ **警告**：Kelly 最優倉位 ≤ 0
+                                                
+                                                這表示當前策略的期望值為負，不建議交易！
+                                                
+                                                **建議**：
+                                                - 立即暫停交易
+                                                - 優化策略以提高勝率或賠率
+                                                - 重新評估風險管理規則
+                                                """)
+                                            elif kelly['kelly_optimal_size'] < 0.1:
+                                                st.warning(f"""
+                                                💡 **注意**：Kelly 最優倉位很小（{kelly['kelly_optimal_size']:.2%}）
+                                                
+                                                **建議**：
+                                                - 降低每筆交易的風險
+                                                - 改善策略以提高期望值
+                                                - 考慮使用更保守的倉位（Half Kelly: {kelly['recommended_size']:.2%}）
+                                                """)
+                                            else:
+                                                st.success(f"""
+                                                ✅ Kelly 最優倉位：{kelly['kelly_optimal_size']:.2%}
+                                                
+                                                **建議使用 Half Kelly**：{kelly['recommended_size']:.2%}
+                                                
+                                                Half Kelly 提供更好的風險控制，同時保持良好的增長潛力。
+                                                """)
+                                        
+                                        with tab6:
+                                            st.write("**情緒失控係數分析**")
+                                            
+                                            # 獲取情緒控制分析
+                                            emotional = risk_officer.analyze_emotional_control()
+                                            
+                                            # 情緒控制評分
+                                            emo_col1, emo_col2, emo_col3 = st.columns(3)
+                                            
+                                            with emo_col1:
+                                                score_color = "🔴" if emotional['emotional_control_score'] < 40 else "🟡" if emotional['emotional_control_score'] < 70 else "🟢"
+                                                st.metric(
+                                                    "情緒控制評分",
+                                                    f"{emotional['emotional_control_score']:.1f}/100",
+                                                    delta=f"{emotional['severity']}"
+                                                )
+                                                st.caption(f"{score_color} {emotional['severity']}")
+                                            
+                                            with emo_col2:
+                                                st.metric(
+                                                    "虧損後頻率增加",
+                                                    f"{emotional['frequency_increase_after_loss']:+.1f}%",
+                                                    delta="下單更頻繁" if emotional['frequency_increase_after_loss'] > 20 else "正常"
+                                                )
+                                            
+                                            with emo_col3:
+                                                st.metric(
+                                                    "虧損後槓桿增加",
+                                                    f"{emotional['leverage_increase_after_loss']:+.1f}%",
+                                                    delta="報復性加倉" if emotional['leverage_increase_after_loss'] > 20 else "正常"
+                                                )
+                                            
+                                            # 交易間隔分析
+                                            st.write("**⏱️ 交易間隔分析**")
+                                            
+                                            interval_col1, interval_col2, interval_col3 = st.columns(3)
+                                            
+                                            with interval_col1:
+                                                st.metric("正常交易間隔", f"{emotional['avg_time_between_trades_normal']:.1f} 分鐘")
+                                            
+                                            with interval_col2:
+                                                st.metric(
+                                                    "虧損後交易間隔",
+                                                    f"{emotional['avg_time_between_trades_after_loss']:.1f} 分鐘",
+                                                    delta=f"{emotional['avg_time_between_trades_after_loss'] - emotional['avg_time_between_trades_normal']:.1f} 分鐘",
+                                                    delta_color="inverse" if emotional['avg_time_between_trades_after_loss'] < emotional['avg_time_between_trades_normal'] else "normal"
+                                                )
+                                            
+                                            with interval_col3:
+                                                st.metric("獲利後交易間隔", f"{emotional['avg_time_between_trades_after_win']:.1f} 分鐘")
+                                            
+                                            # 情緒失控案例
+                                            st.write(f"**🚨 情緒失控案例：{emotional['cases_count']} 次 ({emotional['cases_percentage']:.1f}%)**")
+                                            
+                                            if emotional['cases_count'] > 0 and 'emotional_cases' in emotional:
+                                                for i, case in enumerate(emotional['emotional_cases'][:3], 1):
+                                                    with st.container():
+                                                        st.write(f"**案例 {i}**")
+                                                        st.write(f"- 虧損 {case['after_loss']:.2f} USDT 後")
+                                                        st.write(f"- 交易間隔：{case['time_interval']:.1f} 分鐘")
+                                                        st.write(f"- 槓桿增加：{case['leverage_increase']:+.1f}%")
+                                                        st.write(f"- 結果：{case['next_pnl']:+.2f} USDT")
+                                                        st.divider()
+                                            
+                                            # 建議
+                                            if emotional['severity'] in ['critical', 'high']:
+                                                st.error("""
+                                                ⚠️ **警告：檢測到明顯的情緒失控跡象！**
+                                                
+                                                **問題**：
+                                                - 虧損後下單頻率明顯增加
+                                                - 虧損後槓桿明顯增加
+                                                - 交易間隔明顯縮短
+                                                
+                                                **建議**：
+                                                - 設置冷靜期：虧損後強制休息 30-60 分鐘
+                                                - 限制虧損後的槓桿：不允許增加槓桿
+                                                - 使用交易日誌：記錄每筆交易的情緒狀態
+                                                - 考慮尋求專業心理輔導
+                                                """)
+                                            elif emotional['severity'] == 'medium':
+                                                st.warning("""
+                                                💡 **建議：情緒控制有待改善**
+                                                
+                                                - 注意虧損後的交易行為
+                                                - 設置交易規則並嚴格執行
+                                                - 虧損後休息 15-30 分鐘再交易
+                                                """)
+                                            else:
+                                                st.success("✅ 情緒控制良好，保持冷靜交易！")
+                                        
+                                        with tab7:
+                                            st.write("**能力維度評分 (0-10分)**")
+                                            
+                                            # 獲取能力評分
+                                            skills = risk_officer.calculate_skill_dimensions()
+                                            
+                                            # 綜合評分
+                                            st.metric(
+                                                "綜合能力評分",
+                                                f"{skills['overall_score']:.1f}/10",
+                                                delta="優秀" if skills['overall_score'] >= 8 else "良好" if skills['overall_score'] >= 7 else "及格" if skills['overall_score'] >= 6 else "不及格"
+                                            )
+                                            
+                                            # 五大維度評分
+                                            st.write("**📊 五大能力維度**")
+                                            
+                                            # 創建雷達圖數據
+                                            import plotly.graph_objects as go
+                                            
+                                            categories = ['方向研判力', '風險控管力', '心理韌性', '執行紀律', '成本意識']
+                                            values = [
+                                                skills['direction_judgment'],
+                                                skills['risk_management'],
+                                                skills['psychological_resilience'],
+                                                skills['execution_discipline'],
+                                                skills['cost_awareness']
+                                            ]
+                                            
+                                            fig = go.Figure()
+                                            
+                                            fig.add_trace(go.Scatterpolar(
+                                                r=values,
+                                                theta=categories,
+                                                fill='toself',
+                                                name='當前能力'
+                                            ))
+                                            
+                                            fig.update_layout(
+                                                polar=dict(
+                                                    radialaxis=dict(
+                                                        visible=True,
+                                                        range=[0, 10]
+                                                    )
+                                                ),
+                                                showlegend=False,
+                                                height=400
+                                            )
+                                            
+                                            st.plotly_chart(fig, use_container_width=True)
+                                            
+                                            # 詳細評分和扣分原因
+                                            st.write("**📋 詳細評分**")
+                                            
+                                            # 1. 方向研判力
+                                            with st.expander(f"1️⃣ 方向研判力：{skills['direction_judgment']:.1f}/10", expanded=False):
+                                                st.write(f"**勝率**：{skills['win_rate']:.1%}")
+                                                if skills['deduction_reasons']['direction_judgment']:
+                                                    st.write("**扣分原因**：")
+                                                    for reason in skills['deduction_reasons']['direction_judgment']:
+                                                        st.write(f"❌ {reason}")
+                                                else:
+                                                    st.success("✅ 勝率達標，方向判斷良好")
+                                            
+                                            # 2. 風險控管力
+                                            with st.expander(f"2️⃣ 風險控管力：{skills['risk_management']:.1f}/10", expanded=False):
+                                                if skills['deduction_reasons']['risk_management']:
+                                                    st.write("**扣分原因**：")
+                                                    for reason in skills['deduction_reasons']['risk_management']:
+                                                        st.write(f"❌ {reason}")
+                                                else:
+                                                    st.success("✅ 風險控制良好，單筆虧損在合理範圍內")
+                                            
+                                            # 3. 心理韌性
+                                            with st.expander(f"3️⃣ 心理韌性：{skills['psychological_resilience']:.1f}/10", expanded=False):
+                                                if skills['deduction_reasons']['psychological_resilience']:
+                                                    st.write("**扣分原因**：")
+                                                    for reason in skills['deduction_reasons']['psychological_resilience']:
+                                                        st.write(f"❌ {reason}")
+                                                else:
+                                                    st.success("✅ 心理素質良好，無報復性交易跡象")
+                                            
+                                            # 4. 執行紀律
+                                            with st.expander(f"4️⃣ 執行紀律：{skills['execution_discipline']:.1f}/10", expanded=False):
+                                                if skills['deduction_reasons']['execution_discipline']:
+                                                    st.write("**扣分原因**：")
+                                                    for reason in skills['deduction_reasons']['execution_discipline']:
+                                                        st.write(f"❌ {reason}")
+                                                else:
+                                                    st.success("✅ 執行紀律良好，交易一致性高")
+                                            
+                                            # 5. 成本意識
+                                            with st.expander(f"5️⃣ 成本意識：{skills['cost_awareness']:.1f}/10", expanded=False):
+                                                if skills['deduction_reasons']['cost_awareness']:
+                                                    st.write("**扣分原因**：")
+                                                    for reason in skills['deduction_reasons']['cost_awareness']:
+                                                        st.write(f"❌ {reason}")
+                                                else:
+                                                    st.success("✅ 成本控制良好，手續費效率高")
+                                            
+                                            # 總體建議
+                                            st.write("**💡 總體建議**")
+                                            if skills['overall_score'] < 5:
+                                                st.error("""
+                                                ⚠️ **綜合能力評分較低**
+                                                
+                                                建議：
+                                                - 暫停實盤交易
+                                                - 回到模擬盤練習
+                                                - 重點改善評分最低的維度
+                                                - 學習交易心理學和風險管理
+                                                """)
+                                            elif skills['overall_score'] < 7:
+                                                st.warning("""
+                                                💡 **綜合能力有待提升**
+                                                
+                                                建議：
+                                                - 重點改善評分最低的維度
+                                                - 降低交易頻率和倉位
+                                                - 嚴格執行交易計劃
+                                                """)
+                                            else:
+                                                st.success("""
+                                                ✅ **綜合能力良好**
+                                                
+                                                建議：
+                                                - 繼續保持並精進
+                                                - 關注評分較低的維度
+                                                - 持續學習和改進
+                                                """)
                                     
                                     # 快速建議
                                     st.write("**⚡ 快速改進建議**")
@@ -4038,6 +4423,21 @@ elif category == "6️⃣ 交易覆盤":
                                     
                                     if fee_pressure['fee_to_loss_ratio'] > 30:
                                         suggestions.append("🟡 **建議**：手續費壓力過大，減少交易頻率或增加每筆交易的目標利潤")
+                                    
+                                    # 冷靜期建議
+                                    if cooling['should_cool']:
+                                        if cooling['severity'] == 'critical':
+                                            suggestions.append(f"🔴 **緊急**：{cooling['reason']}，建議休息 {cooling['duration_minutes']} 分鐘")
+                                        elif cooling['severity'] == 'high':
+                                            suggestions.append(f"🟠 **警告**：{cooling['reason']}，建議休息 {cooling['duration_minutes']} 分鐘")
+                                        else:
+                                            suggestions.append(f"🟡 **建議**：{cooling['reason']}，建議休息 {cooling['duration_minutes']} 分鐘")
+                                    
+                                    # Kelly Criterion 建議
+                                    if kelly['kelly_optimal_size'] <= 0:
+                                        suggestions.append("🔴 **緊急**：Kelly 最優倉位 ≤ 0，策略期望值為負，立即暫停交易")
+                                    elif kelly['kelly_optimal_size'] < 0.05:
+                                        suggestions.append(f"🟡 **建議**：Kelly 最優倉位很小（{kelly['kelly_optimal_size']:.2%}），建議降低風險或改善策略")
                                     
                                     if suggestions:
                                         for suggestion in suggestions:
