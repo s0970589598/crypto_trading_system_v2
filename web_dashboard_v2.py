@@ -3803,6 +3803,258 @@ elif category == "6️⃣ 交易覆盤":
                             else:
                                 st.info("💡 需要重新評分才能看到智能分析建議（需要完整的交易數據）")
                             
+                            # ========== 新增：量化風險分析 ==========
+                            st.subheader("🔍 量化風險分析")
+                            
+                            if len(scores_df) >= 10:
+                                try:
+                                    # 導入量化風險分析工具
+                                    import sys
+                                    from pathlib import Path
+                                    
+                                    # 添加當前目錄到 Python 路徑
+                                    current_dir = Path(__file__).parent
+                                    if str(current_dir) not in sys.path:
+                                        sys.path.insert(0, str(current_dir))
+                                    
+                                    from quantitative_risk_analysis import QuantitativeRiskOfficer
+                                    
+                                    # 創建風險官實例
+                                    risk_officer = QuantitativeRiskOfficer()
+                                    
+                                    # 顯示關鍵指標
+                                    st.write("**🎯 關鍵風險指標**")
+                                    
+                                    risk_col1, risk_col2, risk_col3, risk_col4 = st.columns(4)
+                                    
+                                    # 1. 最長連損
+                                    max_streak = risk_officer.calculate_max_losing_streak()
+                                    with risk_col1:
+                                        streak_color = "🔴" if max_streak['max_streak'] > 10 else "🟡" if max_streak['max_streak'] > 5 else "🟢"
+                                        st.metric(
+                                            "最長連損",
+                                            f"{max_streak['max_streak']} 次",
+                                            delta=f"{max_streak['total_loss_in_streak']:.2f} USDT",
+                                            delta_color="inverse"
+                                        )
+                                        st.caption(f"{streak_color} {'極高風險' if max_streak['max_streak'] > 10 else '需注意' if max_streak['max_streak'] > 5 else '正常'}")
+                                    
+                                    # 2. 破產風險
+                                    ror = risk_officer.calculate_risk_of_ruin()
+                                    with risk_col2:
+                                        ror_color = "🔴" if ror['risk_of_ruin'] > 0.5 else "🟡" if ror['risk_of_ruin'] > 0.2 else "🟢"
+                                        st.metric(
+                                            "破產風險",
+                                            f"{ror['risk_of_ruin']:.1%}",
+                                            delta=f"期望值 {ror['expectancy']:.2f}",
+                                            delta_color="normal" if ror['expectancy'] > 0 else "inverse"
+                                        )
+                                        st.caption(f"{ror_color} {'必然破產' if ror['risk_of_ruin'] > 0.9 else '極高風險' if ror['risk_of_ruin'] > 0.5 else '高風險' if ror['risk_of_ruin'] > 0.2 else '可控'}")
+                                    
+                                    # 3. 手續費壓力
+                                    fee_pressure = risk_officer.calculate_fee_pressure()
+                                    with risk_col3:
+                                        fee_color = "🔴" if fee_pressure['fee_to_loss_ratio'] > 30 else "🟡" if fee_pressure['fee_to_loss_ratio'] > 10 else "🟢"
+                                        st.metric(
+                                            "手續費壓力",
+                                            f"{fee_pressure['fee_to_loss_ratio']:.1f}%",
+                                            delta=f"{fee_pressure['total_fee']:.2f} USDT",
+                                            delta_color="inverse"
+                                        )
+                                        st.caption(f"{fee_color} 佔總虧損")
+                                    
+                                    # 4. 傾斜行為
+                                    tilt = risk_officer.detect_tilt_behavior()
+                                    with risk_col4:
+                                        tilt_color = "🔴" if tilt['severity'] == 'high' else "🟡" if tilt['severity'] == 'medium' else "🟢"
+                                        st.metric(
+                                            "傾斜行為",
+                                            f"{tilt['tilt_cases_count']} 次",
+                                            delta=f"{tilt['tilt_cases_percentage']:.1f}%",
+                                            delta_color="inverse" if tilt['has_tilt'] else "normal"
+                                        )
+                                        st.caption(f"{tilt_color} {tilt['severity']}")
+                                    
+                                    # 詳細分析（可展開）
+                                    with st.expander("📊 查看詳細量化分析", expanded=False):
+                                        
+                                        # Tab 分頁
+                                        tab1, tab2, tab3 = st.tabs(["💀 破產風險", "💰 手續費分析", "🎰 傾斜檢測"])
+                                        
+                                        with tab1:
+                                            st.write("**破產風險詳細分析**")
+                                            
+                                            # 破產風險說明
+                                            st.info(f"""
+                                            **當前狀態**：
+                                            - 勝率：{ror['win_rate']:.2%}
+                                            - 平均獲利：{ror['avg_win']:.2f} USDT
+                                            - 平均虧損：{ror['avg_loss']:.2f} USDT
+                                            - 賠率：{ror['payoff_ratio']:.2f}:1
+                                            - 期望值：{ror['expectancy']:.2f} USDT/筆
+                                            
+                                            **破產風險**：{ror['risk_of_ruin']:.2%}
+                                            """)
+                                            
+                                            if ror['risk_of_ruin'] > 0.5:
+                                                st.error("⚠️ 破產風險極高！建議立即暫停交易並優化策略。")
+                                            elif ror['risk_of_ruin'] > 0.2:
+                                                st.warning("⚠️ 破產風險偏高，需要改善勝率或賠率。")
+                                            else:
+                                                st.success("✅ 破產風險在可控範圍內。")
+                                            
+                                            # 恢復係數
+                                            recovery = risk_officer.calculate_recovery_factor()
+                                            st.write("**恢復係數**")
+                                            st.metric(
+                                                "需要獲利",
+                                                f"{recovery['recovery_needed_pct']:.1f}%",
+                                                delta=f"最大回撤 {recovery['max_drawdown_pct']:.2f}%"
+                                            )
+                                            
+                                            if recovery['recovery_needed_pct'] > 100:
+                                                st.error(f"⚠️ 需要獲利 {recovery['recovery_needed_pct']:.1f}% 才能回本，幾乎不可能！")
+                                        
+                                        with tab2:
+                                            st.write("**手續費壓力測試**")
+                                            
+                                            # 短線交易分析
+                                            short_trades = risk_officer.analyze_short_term_trades(5.0)
+                                            
+                                            if short_trades.get('count', 0) > 0:
+                                                st.write("**短線交易（<5分鐘）分析**")
+                                                
+                                                short_col1, short_col2, short_col3 = st.columns(3)
+                                                
+                                                with short_col1:
+                                                    st.metric("短線交易數", f"{short_trades['count']} 筆")
+                                                    st.caption(f"{short_trades['percentage']:.1f}% 的交易")
+                                                
+                                                with short_col2:
+                                                    st.metric("短線勝率", f"{short_trades['win_rate']:.1%}")
+                                                    st.caption(f"期望值 {short_trades['expectancy']:.2f}")
+                                                
+                                                with short_col3:
+                                                    st.metric("短線盈虧", f"{short_trades['total_pnl']:.2f} USDT")
+                                                    st.caption(f"手續費 {short_trades['total_fee']:.2f}")
+                                                
+                                                # 模擬停止短線交易
+                                                simulation = risk_officer.simulate_without_short_trades(5.0)
+                                                
+                                                if 'pnl_difference' in simulation:
+                                                    st.write("**💡 模擬：停止所有短線交易**")
+                                                    
+                                                    sim_col1, sim_col2, sim_col3 = st.columns(3)
+                                                    
+                                                    with sim_col1:
+                                                        st.metric(
+                                                            "淨值改善",
+                                                            f"{simulation['pnl_difference']:+.2f} USDT",
+                                                            delta=f"{simulation['pnl_improvement_pct']:+.1f}%"
+                                                        )
+                                                    
+                                                    with sim_col2:
+                                                        st.metric(
+                                                            "節省手續費",
+                                                            f"{simulation['fee_saved']:.2f} USDT"
+                                                        )
+                                                    
+                                                    with sim_col3:
+                                                        st.metric(
+                                                            "勝率提升",
+                                                            f"{simulation['new_win_rate']:.1%}",
+                                                            delta=f"{(simulation['new_win_rate'] - simulation['original_win_rate']) * 100:+.1f}%"
+                                                        )
+                                                    
+                                                    if simulation['pnl_improvement_pct'] > 10:
+                                                        st.success(f"✅ 停止短線交易可改善淨值 {simulation['pnl_improvement_pct']:.1f}%！強烈建議執行。")
+                                                    elif simulation['pnl_improvement_pct'] > 0:
+                                                        st.info(f"💡 停止短線交易可改善淨值 {simulation['pnl_improvement_pct']:.1f}%。")
+                                            else:
+                                                st.info("沒有短線交易（<5分鐘）。")
+                                        
+                                        with tab3:
+                                            st.write("**傾斜行為檢測**")
+                                            
+                                            if tilt['has_tilt']:
+                                                st.warning(f"⚠️ 檢測到 {tilt['tilt_cases_count']} 次傾斜行為（{tilt['tilt_cases_percentage']:.1f}%）")
+                                                
+                                                tilt_col1, tilt_col2 = st.columns(2)
+                                                
+                                                with tilt_col1:
+                                                    st.metric(
+                                                        "虧損後槓桿變化",
+                                                        f"{tilt['avg_leverage_change_after_loss']:+.2f}x",
+                                                        delta="報復性加倉" if tilt['avg_leverage_change_after_loss'] > 5 else "正常"
+                                                    )
+                                                
+                                                with tilt_col2:
+                                                    st.metric(
+                                                        "獲利後槓桿變化",
+                                                        f"{tilt['avg_leverage_change_after_win']:+.2f}x"
+                                                    )
+                                                
+                                                # 顯示傾斜案例
+                                                if tilt['tilt_cases']:
+                                                    st.write("**典型傾斜案例**")
+                                                    for i, case in enumerate(tilt['tilt_cases'][:3], 1):
+                                                        with st.container():
+                                                            st.write(f"**案例 {i}**")
+                                                            st.write(f"- 虧損 {case['after_loss']:.2f} USDT 後")
+                                                            st.write(f"- 槓桿增加 {case['leverage_increase_pct']:+.1f}%")
+                                                            st.write(f"- 倉位增加 {case['quantity_increase_pct']:+.1f}%")
+                                                            st.write(f"- 結果：{case['next_pnl']:+.2f} USDT")
+                                                            st.divider()
+                                                
+                                                st.error("""
+                                                **建議**：
+                                                - 虧損後禁止增加槓桿
+                                                - 設置「冷靜期」（虧損後 30 分鐘內不交易）
+                                                - 限制連續虧損後的交易次數
+                                                """)
+                                            else:
+                                                st.success("✅ 未檢測到明顯的傾斜行為。")
+                                    
+                                    # 快速建議
+                                    st.write("**⚡ 快速改進建議**")
+                                    
+                                    suggestions = []
+                                    
+                                    # 根據分析結果生成建議
+                                    if ror['risk_of_ruin'] > 0.5:
+                                        suggestions.append("🔴 **緊急**：破產風險極高，立即暫停交易並優化策略")
+                                    
+                                    if max_streak['max_streak'] > 10:
+                                        suggestions.append("🔴 **緊急**：連續虧損過多，策略可能在某些市場環境下失效")
+                                    
+                                    short_trades = risk_officer.analyze_short_term_trades(5.0)
+                                    if short_trades.get('count', 0) > 0 and short_trades.get('expectancy', 0) < 0:
+                                        simulation = risk_officer.simulate_without_short_trades(5.0)
+                                        if simulation.get('pnl_improvement_pct', 0) > 10:
+                                            suggestions.append(f"🟡 **建議**：停止所有 5 分鐘內的短線交易，可改善淨值 {simulation['pnl_improvement_pct']:.1f}%")
+                                    
+                                    if tilt['has_tilt'] and tilt['severity'] in ['high', 'medium']:
+                                        suggestions.append("🟡 **建議**：實施傾斜檢測機制，虧損後禁止增加槓桿")
+                                    
+                                    if fee_pressure['fee_to_loss_ratio'] > 30:
+                                        suggestions.append("🟡 **建議**：手續費壓力過大，減少交易頻率或增加每筆交易的目標利潤")
+                                    
+                                    if suggestions:
+                                        for suggestion in suggestions:
+                                            st.write(suggestion)
+                                    else:
+                                        st.success("✅ 當前風險指標在可控範圍內，繼續保持！")
+                                    
+                                except ImportError:
+                                    st.warning("⚠️ 量化風險分析模組未安裝。請確保 quantitative_risk_analysis.py 在同一目錄下。")
+                                except Exception as e:
+                                    st.error(f"❌ 量化風險分析失敗：{e}")
+                                    import traceback
+                                    with st.expander("查看錯誤詳情"):
+                                        st.code(traceback.format_exc())
+                            else:
+                                st.info("💡 需要至少 10 筆已評分的交易才能進行量化風險分析。")
+                            
                             # 評分方式統計
                             if 'scoring_mode' in scores_df.columns:
                                 st.subheader("📊 評分方式統計")
