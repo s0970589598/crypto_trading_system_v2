@@ -12,14 +12,96 @@ from datetime import datetime
 import sys
 import traceback
 import numpy as np
+import time
 
 # 添加當前目錄到路徑
 sys.path.insert(0, ".")
+
+# 嘗試導入 MarketAnalyzer
+_MarketAnalyzer = None
+try:
+    from src.analysis.market_analyzer import MarketAnalyzer as _MarketAnalyzer
+except ImportError:
+    pass
+
+def make_json_serializable(obj, max_depth=10, _depth=0, _seen=None):
+    """
+    將對象轉換為 JSON 可序列化的格式
+    
+    處理常見的不可序列化類型：
+    - numpy 類型 → Python 原生類型
+    - pandas Timestamp → 字符串
+    - datetime → 字符串
+    - NaN/Infinity → None
+    
+    Args:
+        obj: 要轉換的對象
+        max_depth: 最大遞歸深度（防止無限遞歸）
+        _depth: 當前遞歸深度（內部使用）
+        _seen: 已處理的對象集合（內部使用，防止循環引用）
+    """
+    import numpy as np
+    import pandas as pd
+    from datetime import datetime
+    
+    # 初始化已處理對象集合
+    if _seen is None:
+        _seen = set()
+    
+    # 檢查遞歸深度
+    if _depth > max_depth:
+        return f"<max depth {max_depth} exceeded>"
+    
+    # 檢查循環引用（只對可哈希的對象）
+    try:
+        obj_id = id(obj)
+        if obj_id in _seen:
+            return "<circular reference>"
+        # 對於容器類型，添加到已處理集合
+        if isinstance(obj, (dict, list, tuple)):
+            _seen.add(obj_id)
+    except:
+        pass
+    
+    # 處理不同類型
+    if isinstance(obj, dict):
+        return {k: make_json_serializable(v, max_depth, _depth + 1, _seen) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [make_json_serializable(item, max_depth, _depth + 1, _seen) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(make_json_serializable(item, max_depth, _depth + 1, _seen) for item in obj)
+    elif isinstance(obj, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32, np.float16)):
+        if np.isnan(obj) or np.isinf(obj):
+            return None
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return make_json_serializable(obj.tolist(), max_depth, _depth + 1, _seen)
+    elif isinstance(obj, (pd.Timestamp, datetime)):
+        return obj.isoformat()
+    elif isinstance(obj, pd.Series):
+        return make_json_serializable(obj.to_dict(), max_depth, _depth + 1, _seen)
+    elif isinstance(obj, pd.DataFrame):
+        return make_json_serializable(obj.to_dict('records'), max_depth, _depth + 1, _seen)
+    elif pd.isna(obj):
+        return None
+    elif isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+    else:
+        # 對於其他類型，嘗試轉換為字符串
+        try:
+            return str(obj)
+        except:
+            return f"<{type(obj).__name__}>"
 
 def render():
     """渲染quality scoring頁面"""
     # 確保 Path 可用
     from pathlib import Path as PathClass
+    
+    # 創建 MarketAnalyzer 的局部引用（避免作用域問題）
+    MarketAnalyzer = _MarketAnalyzer
     
     st.subheader("⭐ 執行質量評分")
     
@@ -212,8 +294,11 @@ def render():
                         market_analyzer = None
                         if use_market_analysis:
                             try:
-                                market_analyzer = MarketAnalyzer()
-                                st.info("✅ 市場分析器已啟用")
+                                if MarketAnalyzer is None:
+                                    st.error("❌ MarketAnalyzer 未安裝或導入失敗")
+                                else:
+                                    market_analyzer = MarketAnalyzer()
+                                    st.info("✅ 市場分析器已啟用")
                             except Exception as e:
                                 st.warning(f"⚠️ 市場分析器初始化失敗：{e}")
                                 market_analyzer = None
@@ -383,7 +468,7 @@ def render():
                                     market_analysis = market_analyzer.analyze_market_at_time(
                                         symbol=symbol,
                                         timestamp=open_time,
-                                        intervals=['15m', '1h', '4h', '1d']
+                                        intervals=['1m', '3m', '5m', '15m', '1h', '4h', '1d']
                                     )
                                     
                                     if market_analysis:
@@ -806,13 +891,16 @@ def render():
                                 multi_tf = market_analysis.get('multi_timeframe', {})
                                 
                                 # 為每個時區生成詳細報告
-                                for tf_interval in ['15m', '1h', '4h', '1d']:
+                                for tf_interval in ['1m', '3m', '5m', '15m', '1h', '4h', '1d']:
                                     tf_data = multi_tf.get(tf_interval)
                                     if not tf_data:
                                         continue
                                     
                                     # 時區標題
                                     tf_name_map = {
+                                        '1m': '1分鐘',
+                                        '3m': '3分鐘',
+                                        '5m': '5分鐘',
                                         '15m': '15分鐘',
                                         '1h': '1小時',
                                         '4h': '4小時',
@@ -911,7 +999,7 @@ def render():
                                     auto_note += "\n【多時區趨勢對比】"
                                     auto_note += f"\n{'='*40}\n"
                                     
-                                    for tf_interval in ['15m', '1h', '4h', '1d']:
+                                    for tf_interval in ['1m', '3m', '5m', '15m', '1h', '4h', '1d']:
                                         tf_data = multi_tf.get(tf_interval)
                                         if tf_data:
                                             tf_trend = tf_data.get('trend', 'unknown')
@@ -2738,396 +2826,399 @@ def render():
                                                     
                                                     if trade_time:
                                                         try:
-                                                            from src.analysis.market_analyzer import MarketAnalyzer
-                                                            import plotly.graph_objects as go
-                                                            from plotly.subplots import make_subplots
-                                                            
-                                                            analyzer = MarketAnalyzer()
-                                                            
-                                                            # 獲取進場和出場時間
-                                                            entry_time = selected_row.get('open_time') or selected_row.get('entry_time') or selected_row.get('date')
-                                                            exit_time = selected_row.get('close_time') or selected_row.get('exit_time')
-                                                            
-                                                            # 時區選擇
-                                                            available_intervals = list(analysis['multi_timeframe'].keys())
-                                                            
-                                                            # 在時區選擇器上方顯示一次調試信息
-                                                            st.info(f"🔍 **交易時間**\n\n進場：{entry_time} | 出場：{exit_time if exit_time else '無'}\n\n💡 提示：標記顯示在包含該時間的K線上（例如：8:50的交易會標記在8:45-9:00的K線）")
-                                                            
-                                                            selected_interval = st.selectbox(
-                                                                "選擇時區",
-                                                                available_intervals,
-                                                                index=available_intervals.index('1h') if '1h' in available_intervals else 0,
-                                                                key=f"interval_select_{idx}"
-                                                            )
-                                                            
-                                                            # 載入該時區的市場數據
-                                                            df = analyzer.load_market_data(symbol, selected_interval)
-                                                            
-                                                            if df is not None and len(df) > 0:
-                                                                # 計算指標
-                                                                df = analyzer.calculate_indicators(df)
+                                                            # 使用局部引用的 MarketAnalyzer
+                                                            if MarketAnalyzer is None:
+                                                                st.error("❌ MarketAnalyzer 未安裝或導入失敗，無法顯示K線圖")
+                                                            else:
+                                                                import plotly.graph_objects as go
+                                                                from plotly.subplots import make_subplots
                                                                 
-                                                                # 找到進場時間點附近的數據
-                                                                if not entry_time or pd.isna(entry_time):
-                                                                    st.warning("⚠️ 無法獲取進場時間")
-                                                                else:
-                                                                    entry_timestamp = pd.to_datetime(entry_time)
-                                                                    df['time_diff'] = abs((df['timestamp'] - entry_timestamp).dt.total_seconds())
-                                                                    entry_idx = df['time_diff'].idxmin()
-                                                                    
-                                                                    # 找到出場時間點
-                                                                    exit_idx = None
-                                                                    exit_timestamp = None
-                                                                    if exit_time and pd.notna(exit_time):
-                                                                        try:
-                                                                            exit_timestamp = pd.to_datetime(exit_time)
-                                                                            df['exit_time_diff'] = abs((df['timestamp'] - exit_timestamp).dt.total_seconds())
-                                                                            exit_idx = df['exit_time_diff'].idxmin()
-                                                                        except Exception as e:
-                                                                            st.warning(f"⚠️ 出場時間解析失敗：{e}")
-                                                                    
-                                                                    # 確定顯示範圍（包含進場和出場）
-                                                                    if exit_idx is not None:
-                                                                        # 如果有出場時間，確保兩個點都在顯示範圍內
-                                                                        min_idx = min(entry_idx, exit_idx)
-                                                                        max_idx = max(entry_idx, exit_idx)
-                                                                        start_idx = max(0, min_idx - 30)
-                                                                        end_idx = min(len(df), max_idx + 30)
+                                                                analyzer = MarketAnalyzer()
+                                                                
+                                                                # 獲取進場和出場時間
+                                                                entry_time = selected_row.get('open_time') or selected_row.get('entry_time') or selected_row.get('date')
+                                                                exit_time = selected_row.get('close_time') or selected_row.get('exit_time')
+                                                                
+                                                                # 時區選擇
+                                                                available_intervals = list(analysis['multi_timeframe'].keys())
+                                                            
+                                                                # 在時區選擇器上方顯示一次調試信息
+                                                                st.info(f"🔍 **交易時間**\n\n進場：{entry_time} | 出場：{exit_time if exit_time else '無'}\n\n💡 提示：標記顯示在包含該時間的K線上（例如：8:50的交易會標記在8:45-9:00的K線）")
+                                                            
+                                                                selected_interval = st.selectbox(
+                                                                    "選擇時區",
+                                                                    available_intervals,
+                                                                    index=available_intervals.index('1h') if '1h' in available_intervals else 0,
+                                                                    key=f"interval_select_{idx}"
+                                                                )
+                                                            
+                                                                # 載入該時區的市場數據
+                                                                df = analyzer.load_market_data(symbol, selected_interval)
+                                                            
+                                                                if df is not None and len(df) > 0:
+                                                                    # 計算指標
+                                                                    df = analyzer.calculate_indicators(df)
+                                                                
+                                                                    # 找到進場時間點附近的數據
+                                                                    if not entry_time or pd.isna(entry_time):
+                                                                        st.warning("⚠️ 無法獲取進場時間")
                                                                     else:
-                                                                        # 只有進場時間
-                                                                        start_idx = max(0, entry_idx - 50)
-                                                                        end_idx = min(len(df), entry_idx + 50)
+                                                                        entry_timestamp = pd.to_datetime(entry_time)
+                                                                        df['time_diff'] = abs((df['timestamp'] - entry_timestamp).dt.total_seconds())
+                                                                        entry_idx = df['time_diff'].idxmin()
                                                                     
-                                                                    df_display = df.iloc[start_idx:end_idx].copy()
+                                                                        # 找到出場時間點
+                                                                        exit_idx = None
+                                                                        exit_timestamp = None
+                                                                        if exit_time and pd.notna(exit_time):
+                                                                            try:
+                                                                                exit_timestamp = pd.to_datetime(exit_time)
+                                                                                df['exit_time_diff'] = abs((df['timestamp'] - exit_timestamp).dt.total_seconds())
+                                                                                exit_idx = df['exit_time_diff'].idxmin()
+                                                                            except Exception as e:
+                                                                                st.warning(f"⚠️ 出場時間解析失敗：{e}")
                                                                     
-                                                                    # 創建子圖：K線 + 指標
-                                                                    fig = make_subplots(
-                                                                        rows=5, cols=1,
-                                                                        shared_xaxes=True,
-                                                                        vertical_spacing=0.03,
-                                                                        row_heights=[0.4, 0.15, 0.15, 0.15, 0.15],
-                                                                        subplot_titles=(
-                                                                            f'{symbol} {selected_interval} K線圖 + EMA + 布林帶',
-                                                                            'MACD',
-                                                                            'RSI',
-                                                                            'ATR',
-                                                                            '成交量'
-                                                                        )
-                                                                    )
-                                                                    
-                                                                    # 1. K線圖
-                                                                    fig.add_trace(
-                                                                        go.Candlestick(
-                                                                            x=df_display['timestamp'],
-                                                                            open=df_display['open'],
-                                                                            high=df_display['high'],
-                                                                            low=df_display['low'],
-                                                                            close=df_display['close'],
-                                                                            name='K線',
-                                                                            increasing_line_color='#26a69a',
-                                                                            decreasing_line_color='#ef5350'
-                                                                        ),
-                                                                        row=1, col=1
-                                                                        )
-                                                                    
-                                                                    # EMA 12, 26
-                                                                    fig.add_trace(
-                                                                        go.Scatter(
-                                                                            x=df_display['timestamp'],
-                                                                            y=df_display['ema_12'],
-                                                                            name='EMA 12',
-                                                                            line=dict(color='orange', width=1)
-                                                                        ),
-                                                                        row=1, col=1
-                                                                    )
-                                                                    
-                                                                    fig.add_trace(
-                                                                        go.Scatter(
-                                                                            x=df_display['timestamp'],
-                                                                            y=df_display['ema_26'],
-                                                                            name='EMA 26',
-                                                                            line=dict(color='blue', width=1)
-                                                                        ),
-                                                                        row=1, col=1
-                                                                    )
-                                                                    
-                                                                    # 布林帶
-                                                                    fig.add_trace(
-                                                                        go.Scatter(
-                                                                            x=df_display['timestamp'],
-                                                                            y=df_display['bb_upper'],
-                                                                            name='布林上軌',
-                                                                            line=dict(color='gray', width=1, dash='dash'),
-                                                                            showlegend=False
-                                                                        ),
-                                                                        row=1, col=1
-                                                                    )
-                                                                    
-                                                                    fig.add_trace(
-                                                                        go.Scatter(
-                                                                            x=df_display['timestamp'],
-                                                                            y=df_display['bb_middle'],
-                                                                            name='布林中軌',
-                                                                            line=dict(color='gray', width=1),
-                                                                            showlegend=False
-                                                                        ),
-                                                                        row=1, col=1
-                                                                    )
-                                                                    
-                                                                    fig.add_trace(
-                                                                        go.Scatter(
-                                                                            x=df_display['timestamp'],
-                                                                            y=df_display['bb_lower'],
-                                                                            name='布林下軌',
-                                                                            line=dict(color='gray', width=1, dash='dash'),
-                                                                            fill='tonexty',
-                                                                            fillcolor='rgba(128,128,128,0.1)',
-                                                                            showlegend=False
-                                                                        ),
-                                                                        row=1, col=1
-                                                                    )
-                                                                    
-                                                                    # 標記進場點
-                                                                    # 使用實際進場價格，而不是K線收盤價
-                                                                    entry_price = selected_row.get('entry_price', df.loc[entry_idx, 'close'])
-                                                                    entry_high = df.loc[entry_idx, 'high']
-                                                                    entry_low = df.loc[entry_idx, 'low']
-                                                                    direction = selected_row.get('direction', 'Long')
-                                                                    
-                                                                    # 計算標記位置（避免遮擋K線）
-                                                                    price_range = entry_high - entry_low
-                                                                    if direction == 'Long':
-                                                                        # 做多：標記在K線下方
-                                                                        marker_y = entry_low - price_range * 0.5
-                                                                        text_position = 'bottom center'
-                                                                    else:
-                                                                        # 做空：標記在K線上方
-                                                                        marker_y = entry_high + price_range * 0.5
-                                                                        text_position = 'top center'
-                                                                    
-                                                                    fig.add_trace(
-                                                                        go.Scatter(
-                                                                            x=[df.loc[entry_idx, 'timestamp']],
-                                                                            y=[marker_y],
-                                                                            mode='markers+text',
-                                                                            name='進場',
-                                                                            text=[f'進場<br>{entry_time[11:19]}<br>${entry_price:.2f}'],  # 顯示時間和價格
-                                                                            textposition=text_position,
-                                                                            marker=dict(
-                                                                                size=15,
-                                                                                color='#00ff00' if direction == 'Long' else '#ff0000',
-                                                                                symbol='triangle-up' if direction == 'Long' else 'triangle-down',
-                                                                                line=dict(color='white', width=2)
-                                                                            ),
-                                                                            textfont=dict(
-                                                                                size=10,
-                                                                                color='#00ff00' if direction == 'Long' else '#ff0000',
-                                                                                family='Arial'
-                                                                            ),
-                                                                            showlegend=True
-                                                                        ),
-                                                                        row=1, col=1
-                                                                    )
-                                                                    
-                                                                    # 標記出場點（如果有）
-                                                                    if exit_idx is not None:
-                                                                        # 使用實際出場價格，而不是K線收盤價
-                                                                        exit_price = selected_row.get('exit_price', df.loc[exit_idx, 'close'])
-                                                                        exit_high = df.loc[exit_idx, 'high']
-                                                                        exit_low = df.loc[exit_idx, 'low']
-                                                                        pnl = selected_row.get('pnl', 0)
-                                                                        is_profit = pnl > 0
-                                                                        
-                                                                        # 計算標記位置（避免遮擋K線）
-                                                                        exit_price_range = exit_high - exit_low
-                                                                        if is_profit:
-                                                                            # 獲利：標記在K線上方
-                                                                            exit_marker_y = exit_high + exit_price_range * 0.5
-                                                                            exit_text_position = 'top center'
+                                                                        # 確定顯示範圍（包含進場和出場）
+                                                                        if exit_idx is not None:
+                                                                            # 如果有出場時間，確保兩個點都在顯示範圍內
+                                                                            min_idx = min(entry_idx, exit_idx)
+                                                                            max_idx = max(entry_idx, exit_idx)
+                                                                            start_idx = max(0, min_idx - 30)
+                                                                            end_idx = min(len(df), max_idx + 30)
                                                                         else:
-                                                                            # 虧損：標記在K線下方
-                                                                            exit_marker_y = exit_low - exit_price_range * 0.5
-                                                                            exit_text_position = 'bottom center'
-                                                                        
+                                                                            # 只有進場時間
+                                                                            start_idx = max(0, entry_idx - 50)
+                                                                            end_idx = min(len(df), entry_idx + 50)
+                                                                    
+                                                                        df_display = df.iloc[start_idx:end_idx].copy()
+                                                                    
+                                                                        # 創建子圖：K線 + 指標
+                                                                        fig = make_subplots(
+                                                                            rows=5, cols=1,
+                                                                            shared_xaxes=True,
+                                                                            vertical_spacing=0.03,
+                                                                            row_heights=[0.4, 0.15, 0.15, 0.15, 0.15],
+                                                                            subplot_titles=(
+                                                                                f'{symbol} {selected_interval} K線圖 + EMA + 布林帶',
+                                                                                'MACD',
+                                                                                'RSI',
+                                                                                'ATR',
+                                                                                '成交量'
+                                                                            )
+                                                                        )
+                                                                    
+                                                                        # 1. K線圖
+                                                                        fig.add_trace(
+                                                                            go.Candlestick(
+                                                                                x=df_display['timestamp'],
+                                                                                open=df_display['open'],
+                                                                                high=df_display['high'],
+                                                                                low=df_display['low'],
+                                                                                close=df_display['close'],
+                                                                                name='K線',
+                                                                                increasing_line_color='#26a69a',
+                                                                                decreasing_line_color='#ef5350'
+                                                                            ),
+                                                                            row=1, col=1
+                                                                            )
+                                                                    
+                                                                        # EMA 12, 26
                                                                         fig.add_trace(
                                                                             go.Scatter(
-                                                                                x=[df.loc[exit_idx, 'timestamp']],
-                                                                                y=[exit_marker_y],
+                                                                                x=df_display['timestamp'],
+                                                                                y=df_display['ema_12'],
+                                                                                name='EMA 12',
+                                                                                line=dict(color='orange', width=1)
+                                                                            ),
+                                                                            row=1, col=1
+                                                                        )
+                                                                    
+                                                                        fig.add_trace(
+                                                                            go.Scatter(
+                                                                                x=df_display['timestamp'],
+                                                                                y=df_display['ema_26'],
+                                                                                name='EMA 26',
+                                                                                line=dict(color='blue', width=1)
+                                                                            ),
+                                                                            row=1, col=1
+                                                                        )
+                                                                    
+                                                                        # 布林帶
+                                                                        fig.add_trace(
+                                                                            go.Scatter(
+                                                                                x=df_display['timestamp'],
+                                                                                y=df_display['bb_upper'],
+                                                                                name='布林上軌',
+                                                                                line=dict(color='gray', width=1, dash='dash'),
+                                                                                showlegend=False
+                                                                            ),
+                                                                            row=1, col=1
+                                                                        )
+                                                                    
+                                                                        fig.add_trace(
+                                                                            go.Scatter(
+                                                                                x=df_display['timestamp'],
+                                                                                y=df_display['bb_middle'],
+                                                                                name='布林中軌',
+                                                                                line=dict(color='gray', width=1),
+                                                                                showlegend=False
+                                                                            ),
+                                                                            row=1, col=1
+                                                                        )
+                                                                    
+                                                                        fig.add_trace(
+                                                                            go.Scatter(
+                                                                                x=df_display['timestamp'],
+                                                                                y=df_display['bb_lower'],
+                                                                                name='布林下軌',
+                                                                                line=dict(color='gray', width=1, dash='dash'),
+                                                                                fill='tonexty',
+                                                                                fillcolor='rgba(128,128,128,0.1)',
+                                                                                showlegend=False
+                                                                            ),
+                                                                            row=1, col=1
+                                                                        )
+                                                                    
+                                                                        # 標記進場點
+                                                                        # 使用實際進場價格，而不是K線收盤價
+                                                                        entry_price = selected_row.get('entry_price', df.loc[entry_idx, 'close'])
+                                                                        entry_high = df.loc[entry_idx, 'high']
+                                                                        entry_low = df.loc[entry_idx, 'low']
+                                                                        direction = selected_row.get('direction', 'Long')
+                                                                    
+                                                                        # 計算標記位置（避免遮擋K線）
+                                                                        price_range = entry_high - entry_low
+                                                                        if direction == 'Long':
+                                                                            # 做多：標記在K線下方
+                                                                            marker_y = entry_low - price_range * 0.5
+                                                                            text_position = 'bottom center'
+                                                                        else:
+                                                                            # 做空：標記在K線上方
+                                                                            marker_y = entry_high + price_range * 0.5
+                                                                            text_position = 'top center'
+                                                                    
+                                                                        fig.add_trace(
+                                                                            go.Scatter(
+                                                                                x=[df.loc[entry_idx, 'timestamp']],
+                                                                                y=[marker_y],
                                                                                 mode='markers+text',
-                                                                                name='出場',
-                                                                                text=[f'出場<br>{exit_time[11:19]}<br>${exit_price:.2f}'],  # 顯示時間和價格
-                                                                                textposition=exit_text_position,
+                                                                                name='進場',
+                                                                                text=[f'進場<br>{entry_time[11:19]}<br>${entry_price:.2f}'],  # 顯示時間和價格
+                                                                                textposition=text_position,
                                                                                 marker=dict(
                                                                                     size=15,
-                                                                                    color='#ffd700' if is_profit else '#ff6347',
-                                                                                    symbol='x',
+                                                                                    color='#00ff00' if direction == 'Long' else '#ff0000',
+                                                                                    symbol='triangle-up' if direction == 'Long' else 'triangle-down',
                                                                                     line=dict(color='white', width=2)
                                                                                 ),
                                                                                 textfont=dict(
                                                                                     size=10,
-                                                                                    color='#ffd700' if is_profit else '#ff6347',
+                                                                                    color='#00ff00' if direction == 'Long' else '#ff0000',
                                                                                     family='Arial'
                                                                                 ),
                                                                                 showlegend=True
                                                                             ),
                                                                             row=1, col=1
                                                                         )
+                                                                    
+                                                                        # 標記出場點（如果有）
+                                                                        if exit_idx is not None:
+                                                                            # 使用實際出場價格，而不是K線收盤價
+                                                                            exit_price = selected_row.get('exit_price', df.loc[exit_idx, 'close'])
+                                                                            exit_high = df.loc[exit_idx, 'high']
+                                                                            exit_low = df.loc[exit_idx, 'low']
+                                                                            pnl = selected_row.get('pnl', 0)
+                                                                            is_profit = pnl > 0
                                                                         
-                                                                        # 繪製進場到出場的連線（使用實際價格）
+                                                                            # 計算標記位置（避免遮擋K線）
+                                                                            exit_price_range = exit_high - exit_low
+                                                                            if is_profit:
+                                                                                # 獲利：標記在K線上方
+                                                                                exit_marker_y = exit_high + exit_price_range * 0.5
+                                                                                exit_text_position = 'top center'
+                                                                            else:
+                                                                                # 虧損：標記在K線下方
+                                                                                exit_marker_y = exit_low - exit_price_range * 0.5
+                                                                                exit_text_position = 'bottom center'
+                                                                        
+                                                                            fig.add_trace(
+                                                                                go.Scatter(
+                                                                                    x=[df.loc[exit_idx, 'timestamp']],
+                                                                                    y=[exit_marker_y],
+                                                                                    mode='markers+text',
+                                                                                    name='出場',
+                                                                                    text=[f'出場<br>{exit_time[11:19]}<br>${exit_price:.2f}'],  # 顯示時間和價格
+                                                                                    textposition=exit_text_position,
+                                                                                    marker=dict(
+                                                                                        size=15,
+                                                                                        color='#ffd700' if is_profit else '#ff6347',
+                                                                                        symbol='x',
+                                                                                        line=dict(color='white', width=2)
+                                                                                    ),
+                                                                                    textfont=dict(
+                                                                                        size=10,
+                                                                                        color='#ffd700' if is_profit else '#ff6347',
+                                                                                        family='Arial'
+                                                                                    ),
+                                                                                    showlegend=True
+                                                                                ),
+                                                                                row=1, col=1
+                                                                            )
+                                                                        
+                                                                            # 繪製進場到出場的連線（使用實際價格）
+                                                                            fig.add_trace(
+                                                                                go.Scatter(
+                                                                                    x=[df.loc[entry_idx, 'timestamp'], df.loc[exit_idx, 'timestamp']],
+                                                                                    y=[entry_price, exit_price],
+                                                                                    mode='lines',
+                                                                                    name='持倉期間',
+                                                                                    line=dict(
+                                                                                        color='#00ff00' if is_profit else '#ff0000',
+                                                                                        width=2,
+                                                                                        dash='dash'
+                                                                                    ),
+                                                                                    showlegend=True
+                                                                                ),
+                                                                                row=1, col=1
+                                                                            )
+                                                                    
+                                                                        # 2. MACD
                                                                         fig.add_trace(
                                                                             go.Scatter(
-                                                                                x=[df.loc[entry_idx, 'timestamp'], df.loc[exit_idx, 'timestamp']],
-                                                                                y=[entry_price, exit_price],
-                                                                                mode='lines',
-                                                                                name='持倉期間',
-                                                                                line=dict(
-                                                                                    color='#00ff00' if is_profit else '#ff0000',
-                                                                                    width=2,
-                                                                                    dash='dash'
-                                                                                ),
-                                                                                showlegend=True
+                                                                                x=df_display['timestamp'],
+                                                                                y=df_display['macd'],
+                                                                                name='MACD',
+                                                                                line=dict(color='blue', width=1)
                                                                             ),
-                                                                            row=1, col=1
+                                                                            row=2, col=1
                                                                         )
                                                                     
-                                                                    # 2. MACD
-                                                                    fig.add_trace(
-                                                                        go.Scatter(
-                                                                            x=df_display['timestamp'],
-                                                                            y=df_display['macd'],
-                                                                            name='MACD',
-                                                                            line=dict(color='blue', width=1)
-                                                                        ),
-                                                                        row=2, col=1
-                                                                    )
-                                                                    
-                                                                    fig.add_trace(
-                                                                        go.Scatter(
-                                                                            x=df_display['timestamp'],
-                                                                            y=df_display['macd_signal'],
-                                                                            name='Signal',
-                                                                            line=dict(color='orange', width=1)
-                                                                        ),
-                                                                        row=2, col=1
-                                                                    )
-                                                                    
-                                                                    # MACD 柱狀圖
-                                                                    colors = ['green' if val >= 0 else 'red' for val in df_display['macd_hist']]
-                                                                    fig.add_trace(
-                                                                        go.Bar(
-                                                                            x=df_display['timestamp'],
-                                                                            y=df_display['macd_hist'],
-                                                                            name='MACD Hist',
-                                                                            marker_color=colors,
-                                                                            showlegend=False
-                                                                        ),
-                                                                        row=2, col=1
-                                                                    )
-                                                                    
-                                                                    # 3. RSI
-                                                                    fig.add_trace(
-                                                                        go.Scatter(
-                                                                            x=df_display['timestamp'],
-                                                                            y=df_display['rsi'],
-                                                                            name='RSI',
-                                                                            line=dict(color='purple', width=2)
-                                                                        ),
-                                                                        row=3, col=1
-                                                                    )
-                                                                    
-                                                                    # RSI 超買超賣線
-                                                                    fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1, opacity=0.5)
-                                                                    fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1, opacity=0.5)
-                                                                    
-                                                                    # 4. ATR
-                                                                    fig.add_trace(
-                                                                        go.Scatter(
-                                                                            x=df_display['timestamp'],
-                                                                            y=df_display['atr'],
-                                                                            name='ATR',
-                                                                            line=dict(color='brown', width=2),
-                                                                            fill='tozeroy',
-                                                                            fillcolor='rgba(165,42,42,0.2)'
-                                                                        ),
-                                                                        row=4, col=1
-                                                                    )
-                                                                    
-                                                                    # 5. 成交量
-                                                                    volume_colors = ['green' if df_display['close'].iloc[i] >= df_display['open'].iloc[i] 
-                                                                                   else 'red' for i in range(len(df_display))]
-                                                                    
-                                                                    fig.add_trace(
-                                                                        go.Bar(
-                                                                            x=df_display['timestamp'],
-                                                                            y=df_display['volume'],
-                                                                            name='成交量',
-                                                                            marker_color=volume_colors,
-                                                                            showlegend=False
-                                                                        ),
-                                                                        row=5, col=1
-                                                                    )
-                                                                    
-                                                                    # 成交量均線
-                                                                    fig.add_trace(
-                                                                        go.Scatter(
-                                                                            x=df_display['timestamp'],
-                                                                            y=df_display['volume_sma'],
-                                                                            name='成交量均線',
-                                                                            line=dict(color='orange', width=1)
-                                                                        ),
-                                                                        row=5, col=1
-                                                                    )
-                                                                    
-                                                                    # 更新布局
-                                                                    fig.update_layout(
-                                                                        height=1200,
-                                                                        showlegend=True,
-                                                                        xaxis_rangeslider_visible=False,
-                                                                        hovermode='x unified',
-                                                                        legend=dict(
-                                                                            orientation="h",
-                                                                            yanchor="bottom",
-                                                                            y=1.02,
-                                                                            xanchor="right",
-                                                                            x=1
+                                                                        fig.add_trace(
+                                                                            go.Scatter(
+                                                                                x=df_display['timestamp'],
+                                                                                y=df_display['macd_signal'],
+                                                                                name='Signal',
+                                                                                line=dict(color='orange', width=1)
+                                                                            ),
+                                                                            row=2, col=1
                                                                         )
-                                                                    )
                                                                     
-                                                                    # 更新 Y 軸標籤
-                                                                    fig.update_yaxes(title_text="價格", row=1, col=1)
-                                                                    fig.update_yaxes(title_text="MACD", row=2, col=1)
-                                                                    fig.update_yaxes(title_text="RSI", row=3, col=1)
-                                                                    fig.update_yaxes(title_text="ATR", row=4, col=1)
-                                                                    fig.update_yaxes(title_text="成交量", row=5, col=1)
+                                                                        # MACD 柱狀圖
+                                                                        colors = ['green' if val >= 0 else 'red' for val in df_display['macd_hist']]
+                                                                        fig.add_trace(
+                                                                            go.Bar(
+                                                                                x=df_display['timestamp'],
+                                                                                y=df_display['macd_hist'],
+                                                                                name='MACD Hist',
+                                                                                marker_color=colors,
+                                                                                showlegend=False
+                                                                            ),
+                                                                            row=2, col=1
+                                                                        )
                                                                     
-                                                                    st.plotly_chart(fig, use_container_width=True)
+                                                                        # 3. RSI
+                                                                        fig.add_trace(
+                                                                            go.Scatter(
+                                                                                x=df_display['timestamp'],
+                                                                                y=df_display['rsi'],
+                                                                                name='RSI',
+                                                                                line=dict(color='purple', width=2)
+                                                                            ),
+                                                                            row=3, col=1
+                                                                        )
                                                                     
-                                                                    # 顯示該時區的關鍵指標
-                                                                    st.write(f"**{selected_interval} 時區關鍵數據**")
+                                                                        # RSI 超買超賣線
+                                                                        fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1, opacity=0.5)
+                                                                        fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1, opacity=0.5)
                                                                     
-                                                                    tf_analysis = analysis['multi_timeframe'].get(selected_interval, {})
-                                                                    if tf_analysis:
-                                                                        ind_col1, ind_col2, ind_col3, ind_col4 = st.columns(4)
+                                                                        # 4. ATR
+                                                                        fig.add_trace(
+                                                                            go.Scatter(
+                                                                                x=df_display['timestamp'],
+                                                                                y=df_display['atr'],
+                                                                                name='ATR',
+                                                                                line=dict(color='brown', width=2),
+                                                                                fill='tozeroy',
+                                                                                fillcolor='rgba(165,42,42,0.2)'
+                                                                            ),
+                                                                            row=4, col=1
+                                                                        )
+                                                                    
+                                                                        # 5. 成交量
+                                                                        volume_colors = ['green' if df_display['close'].iloc[i] >= df_display['open'].iloc[i] 
+                                                                                       else 'red' for i in range(len(df_display))]
+                                                                    
+                                                                        fig.add_trace(
+                                                                            go.Bar(
+                                                                                x=df_display['timestamp'],
+                                                                                y=df_display['volume'],
+                                                                                name='成交量',
+                                                                                marker_color=volume_colors,
+                                                                                showlegend=False
+                                                                            ),
+                                                                            row=5, col=1
+                                                                        )
+                                                                    
+                                                                        # 成交量均線
+                                                                        fig.add_trace(
+                                                                            go.Scatter(
+                                                                                x=df_display['timestamp'],
+                                                                                y=df_display['volume_sma'],
+                                                                                name='成交量均線',
+                                                                                line=dict(color='orange', width=1)
+                                                                            ),
+                                                                            row=5, col=1
+                                                                        )
+                                                                    
+                                                                        # 更新布局
+                                                                        fig.update_layout(
+                                                                            height=1200,
+                                                                            showlegend=True,
+                                                                            xaxis_rangeslider_visible=False,
+                                                                            hovermode='x unified',
+                                                                            legend=dict(
+                                                                                orientation="h",
+                                                                                yanchor="bottom",
+                                                                                y=1.02,
+                                                                                xanchor="right",
+                                                                                x=1
+                                                                            )
+                                                                        )
+                                                                    
+                                                                        # 更新 Y 軸標籤
+                                                                        fig.update_yaxes(title_text="價格", row=1, col=1)
+                                                                        fig.update_yaxes(title_text="MACD", row=2, col=1)
+                                                                        fig.update_yaxes(title_text="RSI", row=3, col=1)
+                                                                        fig.update_yaxes(title_text="ATR", row=4, col=1)
+                                                                        fig.update_yaxes(title_text="成交量", row=5, col=1)
+                                                                    
+                                                                        st.plotly_chart(fig, use_container_width=True)
+                                                                    
+                                                                        # 顯示該時區的關鍵指標
+                                                                        st.write(f"**{selected_interval} 時區關鍵數據**")
+                                                                    
+                                                                        tf_analysis = analysis['multi_timeframe'].get(selected_interval, {})
+                                                                        if tf_analysis:
+                                                                            ind_col1, ind_col2, ind_col3, ind_col4 = st.columns(4)
                                                                         
-                                                                        with ind_col1:
-                                                                            st.metric("趨勢", tf_analysis.get('trend', 'N/A'))
-                                                                            st.metric("RSI", f"{tf_analysis.get('rsi', 0):.1f}")
+                                                                            with ind_col1:
+                                                                                st.metric("趨勢", tf_analysis.get('trend', 'N/A'))
+                                                                                st.metric("RSI", f"{tf_analysis.get('rsi', 0):.1f}")
                                                                         
-                                                                        with ind_col2:
-                                                                            st.metric("MACD 狀態", tf_analysis.get('macd_state', 'N/A'))
-                                                                            st.metric("波動率", tf_analysis.get('volatility', 'N/A'))
+                                                                            with ind_col2:
+                                                                                st.metric("MACD 狀態", tf_analysis.get('macd_state', 'N/A'))
+                                                                                st.metric("波動率", tf_analysis.get('volatility', 'N/A'))
                                                                         
-                                                                        with ind_col3:
-                                                                            st.metric("均線排列", tf_analysis.get('ma_alignment', 'N/A'))
-                                                                            st.metric("布林帶位置", tf_analysis.get('bb_position', 'N/A'))
+                                                                            with ind_col3:
+                                                                                st.metric("均線排列", tf_analysis.get('ma_alignment', 'N/A'))
+                                                                                st.metric("布林帶位置", tf_analysis.get('bb_position', 'N/A'))
                                                                         
-                                                                        with ind_col4:
-                                                                            st.metric("成交量", tf_analysis.get('volume_state', 'N/A'))
-                                                                            st.metric("ATR %", f"{tf_analysis.get('atr_pct', 0):.2f}%")
-                                                            
-                                                            else:
-                                                                st.warning(f"⚠️ 無法載入 {symbol} {selected_interval} 的市場數據")
+                                                                            with ind_col4:
+                                                                                st.metric("成交量", tf_analysis.get('volume_state', 'N/A'))
+                                                                                st.metric("ATR %", f"{tf_analysis.get('atr_pct', 0):.2f}%")
+                                                                
+                                                                else:
+                                                                    st.warning(f"⚠️ 無法載入 {symbol} {selected_interval} 的市場數據")
                                                         
                                                         except Exception as e:
                                                             st.error(f"❌ 載入圖表失敗：{str(e)}")

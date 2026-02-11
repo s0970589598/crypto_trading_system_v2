@@ -3,8 +3,6 @@
 """
 自動交易提醒系統
 實時監控市場，當符合進場條件時發送通知
-
-v2.0 - 使用 MarketAnalyzer 統一數據管理
 """
 
 import requests
@@ -14,20 +12,7 @@ from datetime import datetime, timedelta
 import time
 import json
 import os
-import sys
 from pathlib import Path
-
-# 添加項目根目錄到路徑
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-# 導入 MarketAnalyzer
-try:
-    from src.analysis.market_analyzer import MarketAnalyzer
-    MARKET_ANALYZER_AVAILABLE = True
-except ImportError as e:
-    print(f"⚠️ 無法導入 MarketAnalyzer: {e}")
-    print("⚠️ 將使用備用的數據獲取方法")
-    MARKET_ANALYZER_AVAILABLE = False
 
 class TradingAlertSystem:
     """交易提醒系統"""
@@ -35,18 +20,13 @@ class TradingAlertSystem:
     def __init__(self, symbol='ETHUSDT', telegram_token=None, chat_id=None, strategy_mode=None):
         self.symbol = symbol
         
-        # 初始化 MarketAnalyzer
-        if MARKET_ANALYZER_AVAILABLE:
-            self.analyzer = MarketAnalyzer()
-            self.use_analyzer = True
-        else:
-            self.analyzer = None
-            self.use_analyzer = False
-        
         # 從環境變數或參數獲取 Telegram 配置
         self.telegram_token = telegram_token or self._load_env_var('TELEGRAM_BOT_TOKEN')
         self.chat_id = chat_id or self._load_env_var('TELEGRAM_CHAT_ID')
         
+        # 策略模式配置
+        self.strategy_mode = strategy_mode or self._load_env_var('STRATEGY_MODE') or 'aggressive'
+        self._configure_strategy()
         # 策略模式配置
         self.strategy_mode = strategy_mode or self._load_env_var('STRATEGY_MODE') or 'aggressive'
         self._configure_strategy()
@@ -67,10 +47,9 @@ class TradingAlertSystem:
         self.hell_hours = [8, 22, 2, 16, 4, 3, 13, 1, 9, 6]
         
         print("=" * 80)
-        print(f"交易提醒系統已啟動（{self.strategy_name}）v2.0")
+        print(f"交易提醒系統已啟動（{self.strategy_name}）")
         print("=" * 80)
         print(f"監控標的：{symbol}")
-        print(f"數據來源：{'MarketAnalyzer (統一管理)' if self.use_analyzer else 'Binance API (直接)'}")
         print(f"策略模式：{self.strategy_name}")
         print(f"策略版本：{self.strategy_description}")
         print(f"進場條件：4H/1H 趨勢一致 + RSI 30-70 + 價格近 EMA（3%）+ 成交量確認")
@@ -134,54 +113,8 @@ class TradingAlertSystem:
         
         return None
     
-    def _interval_to_seconds(self, interval: str) -> int:
-        """轉換時間週期為秒數"""
-        mapping = {
-            '1m': 60,
-            '3m': 180,
-            '5m': 300,
-            '15m': 900,
-            '1h': 3600,
-            '4h': 14400,
-            '1d': 86400
-        }
-        return mapping.get(interval, 3600)
-    
     def fetch_klines(self, interval, limit=200):
-        """獲取 K 線數據（使用 MarketAnalyzer 統一管理）"""
-        try:
-            if self.use_analyzer:
-                # 使用 MarketAnalyzer 獲取數據
-                df = self.analyzer.load_market_data(self.symbol, interval)
-                
-                if df is None or len(df) == 0:
-                    print(f"⚠️ MarketAnalyzer 無法獲取數據，使用備用方法")
-                    return self._fetch_klines_fallback(interval, limit)
-                
-                # 檢查數據是否最新（最後一根K線應該是最近的）
-                last_time = df['timestamp'].max()
-                now = datetime.now()
-                time_diff = (now - last_time).total_seconds()
-                
-                # 如果數據過期（超過2個週期），強制更新
-                interval_seconds = self._interval_to_seconds(interval)
-                if time_diff > interval_seconds * 2:
-                    print(f"📊 數據已過期 {time_diff/3600:.1f} 小時，正在更新...")
-                    df = self.analyzer._update_market_data(self.symbol, interval, df)
-                
-                # 只返回最近的 N 根
-                return df.tail(limit)
-            else:
-                # 使用備用方法
-                return self._fetch_klines_fallback(interval, limit)
-        
-        except Exception as e:
-            print(f"❌ 獲取數據失敗：{e}")
-            # 嘗試備用方法
-            return self._fetch_klines_fallback(interval, limit)
-    
-    def _fetch_klines_fallback(self, interval, limit=200):
-        """備用的數據獲取方法（直接從 Binance API）"""
+        """獲取 K 線數據"""
         url = "https://api.binance.com/api/v3/klines"
         params = {
             'symbol': self.symbol,
@@ -207,7 +140,7 @@ class TradingAlertSystem:
             return df
         
         except Exception as e:
-            print(f"❌ 備用方法也失敗：{e}")
+            print(f"獲取數據失敗：{e}")
             return None
     
     def calculate_indicators(self, df):

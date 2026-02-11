@@ -429,6 +429,7 @@ elif category == "2️⃣ 實盤交易":
     sub_function = st.sidebar.selectbox(
         "選擇功能",
         [
+            "實時市場分析",  # 新增
             "實盤狀態監控",
             "當前持倉",
             "實盤交易記錄",
@@ -436,7 +437,18 @@ elif category == "2️⃣ 實盤交易":
         ]
     )
     
-    if sub_function == "實盤狀態監控":
+    if sub_function == "實時市場分析":
+        # 使用新的實時市場分析頁面
+        try:
+            from pages.trading import live_market_analysis
+            live_market_analysis.render()
+        except Exception as e:
+            st.error(f"❌ 載入實時市場分析頁面失敗：{e}")
+            import traceback
+            with st.expander("查看錯誤詳情"):
+                st.code(traceback.format_exc())
+    
+    elif sub_function == "實盤狀態監控":
         st.subheader("📡 實盤狀態監控")
         
         # 檢查是否有實盤日誌
@@ -1038,9 +1050,14 @@ elif category == "9️⃣ 數據管理":
             st.error(f"❌ 讀取配置失敗：{str(e)}")
     
     elif sub_function == "歷史數據下載":
-        st.subheader("📥 歷史數據下載")
-        st.info("💡 數據下載需要通過命令行：")
-        st.code("python3 fetch_market_data.py")
+        # 使用新的市場數據管理頁面
+        try:
+            from pages.data import market_data_manager
+            market_data_manager.render()
+        except Exception as e:
+            st.error(f"❌ 載入數據管理頁面失敗：{e}")
+            st.info("💡 備用方案 - 使用命令行下載：")
+            st.code("python3 快速重新下載_關鍵時區.py")
 
 # ==================== 10. 系統配置 ====================
 elif category == "🔟 系統配置":

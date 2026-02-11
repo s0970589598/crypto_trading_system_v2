@@ -10,7 +10,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import requests
 import time
+import pytz
 from typing import Dict, Optional, Tuple, List
+
+# 導入型態識別模組
+from .pattern_detector import PatternDetector, PatternSignal, SupportResistance
 
 
 class MarketAnalyzer:
@@ -25,29 +29,35 @@ class MarketAnalyzer:
         self.data_dir = Path(data_dir)
         self.market_data: Dict[str, Dict[str, pd.DataFrame]] = {}
         self.cache_expiry_hours = 24  # 數據過期時間（小時）
+        
+        # 初始化型態偵測器
+        self.pattern_detector = PatternDetector()
     
     def load_market_data(self, symbol: str, interval: str = '1h') -> Optional[pd.DataFrame]:
         """載入市場數據，如果不存在則自動下載
         
         Args:
-            symbol: 交易對（如 BTCUSDT）
+            symbol: 交易對（如 BTCUSDT 或 BTC-USDT）
             interval: 時間週期（15m, 1h, 4h, 1d）
             
         Returns:
             Optional[pd.DataFrame]: 市場數據
         """
-        filename = self.data_dir / f"market_data_{symbol}_{interval}.csv"
+        # 標準化交易對格式（移除連字符）
+        normalized_symbol = symbol.replace('-', '').upper()
+        
+        filename = self.data_dir / f"market_data_{normalized_symbol}_{interval}.csv"
         
         # 如果文件不存在，嘗試下載
         if not filename.exists():
             print(f"⚠️ 市場數據文件不存在：{filename}")
-            print(f"🔄 正在從 Binance API 下載 {symbol} {interval} 數據...")
+            print(f"🔄 正在從 Binance API 下載 {normalized_symbol} {interval} 數據...")
             
             # 下載最近 90 天的數據
             end_time = datetime.now()
             start_time = end_time - timedelta(days=90)
             
-            df = self._fetch_binance_klines(symbol, interval, start_time, end_time)
+            df = self._fetch_binance_klines(normalized_symbol, interval, start_time, end_time)
             
             if df is not None and len(df) > 0:
                 # 保存到文件
@@ -87,36 +97,52 @@ class MarketAnalyzer:
         """為特定時間點更新市場數據
         
         Args:
-            symbol: 交易對
+            symbol: 交易對（已標準化，無連字符）
             interval: 時間週期
-            timestamp: 目標時間點
+            timestamp: 目標時間點（本地時間 UTC+8）
             existing_df: 現有數據
             
         Returns:
             pd.DataFrame: 更新後的數據
         """
         try:
+            # 標準化交易對格式
+            normalized_symbol = symbol.replace('-', '').upper()
+            
             data_start = existing_df['timestamp'].min()
             data_end = existing_df['timestamp'].max()
+            
+            # 時區轉換：本地時間 -> UTC
+            shanghai_tz = pytz.timezone('Asia/Shanghai')
             
             # 判斷需要往前還是往後補齊
             if timestamp < data_start:
                 # 往前補齊
                 print(f"📥 往前補齊數據：{timestamp} -> {data_start}")
+                
+                # 轉換為 UTC
+                timestamp_utc = shanghai_tz.localize(timestamp).astimezone(pytz.UTC).replace(tzinfo=None)
+                data_start_utc = shanghai_tz.localize(data_start).astimezone(pytz.UTC).replace(tzinfo=None)
+                
                 new_data = self._fetch_binance_klines(
-                    symbol,
+                    normalized_symbol,
                     interval,
-                    timestamp - timedelta(days=30),  # 多獲取一些數據
-                    data_start
+                    timestamp_utc - timedelta(days=30),  # 多獲取一些數據
+                    data_start_utc
                 )
             else:
                 # 往後補齊
                 print(f"📥 往後補齊數據：{data_end} -> {timestamp}")
+                
+                # 轉換為 UTC
+                data_end_utc = shanghai_tz.localize(data_end).astimezone(pytz.UTC).replace(tzinfo=None)
+                timestamp_utc = shanghai_tz.localize(timestamp).astimezone(pytz.UTC).replace(tzinfo=None)
+                
                 new_data = self._fetch_binance_klines(
-                    symbol,
+                    normalized_symbol,
                     interval,
-                    data_end,
-                    timestamp + timedelta(days=1)
+                    data_end_utc,
+                    timestamp_utc + timedelta(days=1)
                 )
             
             if new_data is not None and len(new_data) > 0:
@@ -126,7 +152,7 @@ class MarketAnalyzer:
                 combined_df = combined_df.sort_values('timestamp').reset_index(drop=True)
                 
                 # 保存更新後的數據
-                filename = self.data_dir / f"market_data_{symbol}_{interval}.csv"
+                filename = self.data_dir / f"market_data_{normalized_symbol}_{interval}.csv"
                 combined_df.to_csv(filename, index=False)
                 
                 print(f"✅ 已補齊 {len(new_data)} 根 K 線")
@@ -136,13 +162,15 @@ class MarketAnalyzer:
         
         except Exception as e:
             print(f"❌ 補齊數據失敗：{e}")
+            import traceback
+            traceback.print_exc()
             return existing_df
     
     def _update_market_data(self, symbol: str, interval: str, existing_df: pd.DataFrame) -> pd.DataFrame:
         """更新市場數據
         
         Args:
-            symbol: 交易對
+            symbol: 交易對（已標準化，無連字符）
             interval: 時間週期
             existing_df: 現有數據
             
@@ -150,20 +178,26 @@ class MarketAnalyzer:
             pd.DataFrame: 更新後的數據
         """
         try:
-            # 獲取最後一筆數據的時間
-            last_time = existing_df['timestamp'].max()
-            end_time = datetime.now()
+            # 標準化交易對格式
+            normalized_symbol = symbol.replace('-', '').upper()
             
-            # 如果數據已經是最新的，直接返回
-            if (end_time - last_time).total_seconds() < 3600:  # 小於1小時
-                return existing_df
+            # 獲取最後一筆數據的時間（數據文件中是 UTC+8 本地時間）
+            last_time_local = existing_df['timestamp'].max()
             
-            # 從 Binance 獲取新數據
+            # 將本地時間轉換為 UTC（用於 API 請求）
+            shanghai_tz = pytz.timezone('Asia/Shanghai')
+            last_time_with_tz = shanghai_tz.localize(last_time_local)
+            last_time_utc = last_time_with_tz.astimezone(pytz.UTC).replace(tzinfo=None)
+            
+            # 當前 UTC 時間
+            now_utc = datetime.now(pytz.UTC).replace(tzinfo=None)
+            
+            # 從 Binance 獲取新數據（使用 UTC 時間，從最後時間+1秒開始）
             new_data = self._fetch_binance_klines(
-                symbol, 
+                normalized_symbol, 
                 interval, 
-                last_time + timedelta(seconds=1), 
-                end_time
+                last_time_utc + timedelta(seconds=1), 
+                now_utc
             )
             
             if new_data is not None and len(new_data) > 0:
@@ -173,16 +207,20 @@ class MarketAnalyzer:
                 combined_df = combined_df.sort_values('timestamp').reset_index(drop=True)
                 
                 # 保存更新後的數據
-                filename = self.data_dir / f"market_data_{symbol}_{interval}.csv"
+                filename = self.data_dir / f"market_data_{normalized_symbol}_{interval}.csv"
                 combined_df.to_csv(filename, index=False)
                 
                 print(f"✅ 已更新 {len(new_data)} 根新 K 線")
                 return combined_df
+            else:
+                print(f"⚠️ 沒有新數據可更新")
             
             return existing_df
         
         except Exception as e:
             print(f"❌ 更新市場數據失敗：{e}")
+            import traceback
+            traceback.print_exc()
             return existing_df
     
     def _fetch_binance_klines(
@@ -197,8 +235,8 @@ class MarketAnalyzer:
         Args:
             symbol: 交易對
             interval: 時間週期
-            start_time: 開始時間
-            end_time: 結束時間
+            start_time: 開始時間（UTC，naive datetime）
+            end_time: 結束時間（UTC，naive datetime）
             
         Returns:
             Optional[pd.DataFrame]: K 線數據
@@ -209,11 +247,18 @@ class MarketAnalyzer:
         current_start = start_time
         
         while current_start < end_time:
+            # 將 naive datetime 標記為 UTC，然後轉換為毫秒時間戳
+            start_with_tz = pytz.UTC.localize(current_start)
+            end_with_tz = pytz.UTC.localize(end_time)
+            
+            start_ms = int(start_with_tz.timestamp() * 1000)
+            end_ms = int(end_with_tz.timestamp() * 1000)
+            
             params = {
                 'symbol': symbol,
                 'interval': interval,
-                'startTime': int(current_start.timestamp() * 1000),
-                'endTime': int(end_time.timestamp() * 1000),
+                'startTime': start_ms,
+                'endTime': end_ms,
                 'limit': 1000
             }
             
@@ -227,9 +272,10 @@ class MarketAnalyzer:
                 
                 all_klines.extend(klines)
                 
-                # 更新起始時間
-                last_time = klines[-1][0]
-                current_start = datetime.fromtimestamp(last_time / 1000) + timedelta(seconds=1)
+                # 更新起始時間（從 UTC 時間戳轉換回來）
+                last_time_ms = klines[-1][0]
+                last_time_utc = datetime.fromtimestamp(last_time_ms / 1000, tz=pytz.UTC).replace(tzinfo=None)
+                current_start = last_time_utc + timedelta(seconds=1)
                 
                 # 避免 API 限制
                 time.sleep(0.5)
@@ -248,8 +294,9 @@ class MarketAnalyzer:
             'taker_buy_quote', 'ignore'
         ])
         
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-        df['close_time'] = pd.to_datetime(df['close_time'], unit='ms')
+        # 將 UTC 時間轉換為本地時間（UTC+8）
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True).dt.tz_convert('Asia/Shanghai').dt.tz_localize(None)
+        df['close_time'] = pd.to_datetime(df['close_time'], unit='ms', utc=True).dt.tz_convert('Asia/Shanghai').dt.tz_localize(None)
         
         for col in ['open', 'high', 'low', 'close', 'volume']:
             df[col] = df[col].astype(float)
@@ -322,13 +369,13 @@ class MarketAnalyzer:
         Args:
             symbol: 交易對
             timestamp: 時間點
-            intervals: 時間週期列表（默認：['15m', '1h', '4h', '1d']）
+            intervals: 時間週期列表（默認：['1m', '3m', '5m', '15m', '1h', '4h', '1d']）
             
         Returns:
             Optional[Dict]: 市場分析結果（包含多時區分析）
         """
         if intervals is None:
-            intervals = ['15m', '1h', '4h', '1d']
+            intervals = ['1m', '3m', '5m', '15m', '1h', '4h', '1d']
         
         multi_timeframe_analysis = {}
         
@@ -462,7 +509,26 @@ class MarketAnalyzer:
             
             # 支撐/阻力
             'support_resistance': self._find_support_resistance(df, closest_idx),
+            
+            # K線型態識別
+            'patterns': [],
+            'pattern_alerts': []
         }
+        
+        # 偵測K線型態
+        try:
+            patterns = self.pattern_detector.detect_all_patterns(df, closest_idx)
+            if patterns:
+                analysis['patterns'] = patterns
+                # 生成警報訊息
+                alerts = []
+                for pattern in patterns:
+                    if pattern.strength >= 60:  # 只顯示強度 >= 60 的信號
+                        alert = f"{pattern.emoji} {pattern.description} (強度: {pattern.strength:.0f})"
+                        alerts.append(alert)
+                analysis['pattern_alerts'] = alerts
+        except Exception as e:
+            print(f"⚠️ 型態識別失敗：{e}")
         
         return analysis
     
@@ -470,6 +536,7 @@ class MarketAnalyzer:
         """轉換時間週期為秒數"""
         mapping = {
             '1m': 60,
+            '3m': 180,
             '5m': 300,
             '15m': 900,
             '1h': 3600,
@@ -477,6 +544,202 @@ class MarketAnalyzer:
             '1d': 86400
         }
         return mapping.get(interval, 3600)
+    
+    def _interval_to_timedelta(self, interval: str) -> timedelta:
+        """轉換時間週期為 timedelta"""
+        mapping = {
+            '1m': timedelta(minutes=1),
+            '3m': timedelta(minutes=3),
+            '5m': timedelta(minutes=5),
+            '15m': timedelta(minutes=15),
+            '1h': timedelta(hours=1),
+            '4h': timedelta(hours=4),
+            '1d': timedelta(days=1),
+        }
+        return mapping.get(interval)
+    
+    def detect_missing_gaps(self, symbol: str, interval: str) -> List[Dict]:
+        """
+        檢測數據中的缺失K線
+        
+        Args:
+            symbol: 交易對
+            interval: 時間週期
+            
+        Returns:
+            缺失的時間段列表，每個元素包含 start_time 和 end_time
+        """
+        df = self.load_market_data(symbol, interval)
+        
+        if df is None or len(df) < 2:
+            return []
+        
+        df = df.sort_values('timestamp').reset_index(drop=True)
+        interval_delta = self._interval_to_timedelta(interval)
+        
+        if interval_delta is None:
+            print(f"⚠️ 不支持的時間週期：{interval}")
+            return []
+        
+        gaps = []
+        
+        for i in range(len(df) - 1):
+            current_time = df.loc[i, 'timestamp']
+            next_time = df.loc[i + 1, 'timestamp']
+            expected_next = current_time + interval_delta
+            
+            # 檢查是否有缺失
+            if next_time != expected_next:
+                # 計算缺失的數量
+                time_diff = next_time - current_time
+                missing_count = int(time_diff / interval_delta) - 1
+                
+                if missing_count > 0:
+                    gaps.append({
+                        'start_time': current_time + interval_delta,
+                        'end_time': next_time - interval_delta,
+                        'missing_count': missing_count
+                    })
+        
+        return gaps
+    
+    def fill_missing_data(self, symbol: str, interval: str) -> Dict:
+        """
+        檢測並填補缺失的K線數據
+        
+        Args:
+            symbol: 交易對
+            interval: 時間週期
+            
+        Returns:
+            {
+                'total_missing': int,      # 總缺失數量
+                'filled': int,             # 成功填補數量
+                'gaps': List[Dict],        # 缺失的時間段
+                'success': bool            # 是否完全修復
+            }
+        """
+        # 標準化交易對格式
+        normalized_symbol = symbol.replace('-', '').upper()
+        filename = self.data_dir / f"market_data_{normalized_symbol}_{interval}.csv"
+        
+        if not filename.exists():
+            return {
+                'total_missing': 0,
+                'filled': 0,
+                'gaps': [],
+                'success': False,
+                'error': '數據文件不存在'
+            }
+        
+        print(f"\n{'='*60}")
+        print(f"檢測並填補缺失數據")
+        print(f"交易對：{symbol} | 時間週期：{interval}")
+        print(f"{'='*60}")
+        
+        # 檢測缺失
+        gaps = self.detect_missing_gaps(symbol, interval)
+        
+        if not gaps:
+            print(f"✅ 沒有缺失的K線數據")
+            return {
+                'total_missing': 0,
+                'filled': 0,
+                'gaps': [],
+                'success': True
+            }
+        
+        total_missing = sum(gap['missing_count'] for gap in gaps)
+        print(f"\n⚠️ 發現 {len(gaps)} 個缺失時間段，共 {total_missing} 個缺失K線")
+        
+        # 顯示前5個缺失時間段
+        print(f"\n缺失的時間段（前5個）：")
+        for i, gap in enumerate(gaps[:5], 1):
+            print(f"   {i}. {gap['start_time']} 至 {gap['end_time']} ({gap['missing_count']} 個)")
+        
+        if len(gaps) > 5:
+            print(f"   ... 還有 {len(gaps) - 5} 個時間段")
+        
+        # 獲取缺失數據
+        print(f"\n🔄 正在從 Binance API 獲取缺失數據...")
+        
+        df = self.load_market_data(symbol, interval)
+        new_data_list = []
+        
+        for i, gap in enumerate(gaps, 1):
+            start_time = gap['start_time']
+            end_time = gap['end_time'] + self._interval_to_timedelta(interval)
+            
+            print(f"   獲取時間段 {i}/{len(gaps)}: {start_time} 至 {end_time}")
+            
+            # 轉換為 UTC（API 需要）
+            shanghai_tz = pytz.timezone('Asia/Shanghai')
+            start_time_with_tz = shanghai_tz.localize(start_time)
+            end_time_with_tz = shanghai_tz.localize(end_time)
+            start_time_utc = start_time_with_tz.astimezone(pytz.UTC).replace(tzinfo=None)
+            end_time_utc = end_time_with_tz.astimezone(pytz.UTC).replace(tzinfo=None)
+            
+            new_data = self._fetch_binance_klines(
+                normalized_symbol,
+                interval,
+                start_time_utc,
+                end_time_utc
+            )
+            
+            if new_data is not None and len(new_data) > 0:
+                new_data_list.append(new_data)
+                print(f"      ✅ 獲取 {len(new_data)} 條數據")
+            else:
+                print(f"      ⚠️ 無法獲取數據")
+            
+            # 避免請求過快
+            if i < len(gaps):
+                time.sleep(0.5)
+        
+        if not new_data_list:
+            print(f"\n❌ 無法獲取任何缺失數據")
+            return {
+                'total_missing': total_missing,
+                'filled': 0,
+                'gaps': gaps,
+                'success': False
+            }
+        
+        # 合併新數據
+        new_df = pd.concat(new_data_list, ignore_index=True)
+        print(f"\n✅ 共獲取 {len(new_df)} 條新數據")
+        
+        # 合併到原數據
+        combined_df = pd.concat([df, new_df], ignore_index=True)
+        combined_df = combined_df.drop_duplicates(subset=['timestamp'], keep='last')
+        combined_df = combined_df.sort_values('timestamp').reset_index(drop=True)
+        
+        print(f"✅ 合併後總行數：{len(combined_df)}")
+        
+        # 保存
+        print(f"保存到：{filename}")
+        combined_df.to_csv(filename, index=False)
+        print(f"✅ 保存成功")
+        
+        # 再次檢測
+        print(f"\n驗證修復結果...")
+        remaining_gaps = self.detect_missing_gaps(symbol, interval)
+        
+        filled_count = total_missing - sum(gap['missing_count'] for gap in remaining_gaps)
+        success = len(remaining_gaps) == 0
+        
+        if success:
+            print(f"✅ 所有缺失數據已填補")
+        else:
+            remaining_missing = sum(gap['missing_count'] for gap in remaining_gaps)
+            print(f"⚠️ 仍有 {remaining_missing} 個缺失（可能是API無數據）")
+        
+        return {
+            'total_missing': total_missing,
+            'filled': filled_count,
+            'gaps': remaining_gaps,
+            'success': success
+        }
     
     def _analyze_trend(self, df: pd.DataFrame, idx: int) -> str:
         """分析趨勢方向（使用 EMA）"""
@@ -656,3 +919,159 @@ class MarketAnalyzer:
             'distance_to_support': ((current_price - support) / current_price * 100) if support else None,
             'distance_to_resistance': ((resistance - current_price) / current_price * 100) if resistance else None
         }
+
+    # ==================== 型態識別功能 ====================
+    
+    def detect_patterns(
+        self, 
+        symbol: str, 
+        interval: str = '1h',
+        timestamp: Optional[datetime] = None
+    ) -> Dict:
+        """
+        偵測K線型態
+        
+        Args:
+            symbol: 交易對
+            interval: 時間週期
+            timestamp: 指定時間點（None表示最新）
+            
+        Returns:
+            包含所有型態信號的字典
+        """
+        df = self.load_market_data(symbol, interval)
+        if df is None or len(df) == 0:
+            return {'patterns': [], 'supports': [], 'resistances': []}
+        
+        # 確保有技術指標
+        if 'EMA_20' not in df.columns:
+            df = self.calculate_indicators(df)
+        
+        # 找到對應的索引
+        if timestamp:
+            idx = self._find_closest_index(df, timestamp)
+        else:
+            idx = len(df) - 1
+        
+        # 偵測所有型態
+        patterns = self.pattern_detector.detect_all_patterns(df, idx)
+        
+        # 計算支撐阻力
+        supports, resistances = self.pattern_detector.calculate_support_resistance(df, idx)
+        
+        return {
+            'patterns': patterns,
+            'supports': supports,
+            'resistances': resistances,
+            'current_price': df.iloc[idx]['close'],
+            'timestamp': df.iloc[idx]['timestamp']
+        }
+    
+    def get_pattern_alerts(
+        self, 
+        symbol: str, 
+        interval: str = '1h',
+        lookback_bars: int = 10
+    ) -> List[str]:
+        """
+        獲取最近的型態警報訊息
+        
+        Args:
+            symbol: 交易對
+            interval: 時間週期
+            lookback_bars: 回看K線數量
+            
+        Returns:
+            警報訊息列表
+        """
+        df = self.load_market_data(symbol, interval)
+        if df is None or len(df) < lookback_bars:
+            return []
+        
+        alerts = []
+        
+        # 檢查最近的K線
+        for i in range(max(0, len(df) - lookback_bars), len(df)):
+            patterns = self.pattern_detector.detect_all_patterns(df, i)
+            
+            for pattern in patterns:
+                if pattern.strength >= 60:  # 只顯示強度 >= 60 的信號
+                    alert = f"{pattern.emoji} {pattern.description} (強度: {pattern.strength:.0f})"
+                    alerts.append(alert)
+        
+        return alerts
+    
+    def analyze_support_resistance_strength(
+        self,
+        symbol: str,
+        interval: str = '1h',
+        price_level: Optional[float] = None
+    ) -> Dict:
+        """
+        分析支撐/阻力的有效性
+        
+        Args:
+            symbol: 交易對
+            interval: 時間週期
+            price_level: 指定價格水平（None表示分析所有）
+            
+        Returns:
+            支撐阻力分析結果
+        """
+        df = self.load_market_data(symbol, interval)
+        if df is None:
+            return {}
+        
+        supports, resistances = self.pattern_detector.calculate_support_resistance(df)
+        
+        result = {
+            'current_price': df.iloc[-1]['close'],
+            'supports': [],
+            'resistances': [],
+            'nearest_support': None,
+            'nearest_resistance': None
+        }
+        
+        current_price = result['current_price']
+        
+        # 整理支撐位信息
+        for sr in supports:
+            if sr.level < current_price:
+                info = {
+                    'level': sr.level,
+                    'touches': sr.touches,
+                    'strength': sr.strength,
+                    'distance_pct': (current_price - sr.level) / current_price * 100,
+                    'description': f"支撐 ${sr.level:.2f} (觸碰{sr.touches}次, 強度{sr.strength:.0f})"
+                }
+                result['supports'].append(info)
+                
+                # 找最近的支撐
+                if result['nearest_support'] is None or sr.level > result['nearest_support']['level']:
+                    result['nearest_support'] = info
+        
+        # 整理阻力位信息
+        for sr in resistances:
+            if sr.level > current_price:
+                info = {
+                    'level': sr.level,
+                    'touches': sr.touches,
+                    'strength': sr.strength,
+                    'distance_pct': (sr.level - current_price) / current_price * 100,
+                    'description': f"阻力 ${sr.level:.2f} (觸碰{sr.touches}次, 強度{sr.strength:.0f})"
+                }
+                result['resistances'].append(info)
+                
+                # 找最近的阻力
+                if result['nearest_resistance'] is None or sr.level < result['nearest_resistance']['level']:
+                    result['nearest_resistance'] = info
+        
+        return result
+    
+    def _find_closest_index(self, df: pd.DataFrame, timestamp: datetime) -> int:
+        """找到最接近指定時間的索引"""
+        if 'timestamp' not in df.columns:
+            return len(df) - 1
+        
+        time_diffs = abs(df['timestamp'] - timestamp)
+        return time_diffs.idxmin()
