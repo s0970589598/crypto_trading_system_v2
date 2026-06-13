@@ -1744,25 +1744,15 @@ def render():
                                 import sys
                                 from pathlib import Path as PathClass
                                 
-                                # 導入量化風險分析工具（新架構）
-                                from src.analysis.quantitative_risk import QuantitativeRiskAnalyzer
+                                # 添加當前目錄到 Python 路徑
+                                current_dir = PathClass(__file__).parent
+                                if str(current_dir) not in sys.path:
+                                    sys.path.insert(0, str(current_dir))
                                 
-                                # 準備交易數據（需要轉換為 QuantitativeRiskAnalyzer 期望的格式）
-                                trades_for_risk = scores_df.copy()
+                                from quantitative_risk_analysis import QuantitativeRiskOfficer
                                 
-                                # 確保必要的欄位存在
-                                if 'pnl' not in trades_for_risk.columns and 'profit_loss' in trades_for_risk.columns:
-                                    trades_for_risk['pnl'] = trades_for_risk['profit_loss']
-                                
-                                if 'close_time' not in trades_for_risk.columns and 'exit_time' in trades_for_risk.columns:
-                                    trades_for_risk['close_time'] = trades_for_risk['exit_time']
-                                
-                                # 添加 is_loss 欄位
-                                if 'is_loss' not in trades_for_risk.columns:
-                                    trades_for_risk['is_loss'] = trades_for_risk['pnl'] < 0
-                                
-                                # 創建風險分析器實例並傳入數據
-                                risk_analyzer = QuantitativeRiskAnalyzer(trades_df=trades_for_risk)
+                                # 創建風險官實例
+                                risk_officer = QuantitativeRiskOfficer()
                                 
                                 # 顯示關鍵指標
                                 st.write("**🎯 關鍵風險指標**")
@@ -1770,7 +1760,7 @@ def render():
                                 risk_col1, risk_col2, risk_col3, risk_col4 = st.columns(4)
                                 
                                 # 1. 最長連損
-                                max_streak = risk_analyzer.calculate_max_losing_streak()
+                                max_streak = risk_officer.calculate_max_losing_streak()
                                 with risk_col1:
                                     streak_color = "🔴" if max_streak['max_streak'] > 10 else "🟡" if max_streak['max_streak'] > 5 else "🟢"
                                     st.metric(
@@ -1782,7 +1772,7 @@ def render():
                                     st.caption(f"{streak_color} {'極高風險' if max_streak['max_streak'] > 10 else '需注意' if max_streak['max_streak'] > 5 else '正常'}")
                                 
                                 # 2. 破產風險
-                                ror = risk_analyzer.calculate_risk_of_ruin()
+                                ror = risk_officer.calculate_risk_of_ruin()
                                 with risk_col2:
                                     ror_color = "🔴" if ror['risk_of_ruin'] > 0.5 else "🟡" if ror['risk_of_ruin'] > 0.2 else "🟢"
                                     st.metric(
@@ -1794,7 +1784,7 @@ def render():
                                     st.caption(f"{ror_color} {'必然破產' if ror['risk_of_ruin'] > 0.9 else '極高風險' if ror['risk_of_ruin'] > 0.5 else '高風險' if ror['risk_of_ruin'] > 0.2 else '可控'}")
                                 
                                 # 3. 手續費壓力
-                                fee_pressure = risk_analyzer.calculate_fee_pressure()
+                                fee_pressure = risk_officer.calculate_fee_pressure()
                                 with risk_col3:
                                     fee_color = "🔴" if fee_pressure['fee_to_loss_ratio'] > 30 else "🟡" if fee_pressure['fee_to_loss_ratio'] > 10 else "🟢"
                                     st.metric(
@@ -1806,7 +1796,7 @@ def render():
                                     st.caption(f"{fee_color} 佔總虧損")
                                 
                                 # 4. 傾斜行為
-                                tilt = risk_analyzer.detect_tilt_behavior()
+                                tilt = risk_officer.detect_tilt_behavior()
                                 with risk_col4:
                                     tilt_color = "🔴" if tilt['severity'] == 'high' else "🟡" if tilt['severity'] == 'medium' else "🟢"
                                     st.metric(
@@ -1824,7 +1814,7 @@ def render():
                                 risk_col5, risk_col6 = st.columns(2)
                                 
                                 # 5. 冷靜期檢測
-                                cooling = risk_analyzer.check_cooling_period()
+                                cooling = risk_officer.check_cooling_period()
                                 with risk_col5:
                                     if cooling['should_cool']:
                                         severity_color = "🔴" if cooling['severity'] == 'critical' else "🟠" if cooling['severity'] == 'high' else "🟡"
@@ -1845,7 +1835,7 @@ def render():
                                         st.caption("🟢 可以繼續交易")
                                 
                                 # 6. Kelly Criterion
-                                kelly = risk_analyzer.calculate_ror_kelly()
+                                kelly = risk_officer.calculate_ror_kelly()
                                 with risk_col6:
                                     kelly_color = "🔴" if kelly['kelly_optimal_size'] <= 0 else "🟡" if kelly['kelly_optimal_size'] < 0.1 else "🟢"
                                     st.metric(
@@ -1884,7 +1874,7 @@ def render():
                                             st.success("✅ 破產風險在可控範圍內。")
                                         
                                         # 恢復係數
-                                        recovery = risk_analyzer.calculate_recovery_factor()
+                                        recovery = risk_officer.calculate_recovery_factor()
                                         st.write("**恢復係數**")
                                         st.metric(
                                             "需要獲利",
@@ -1899,7 +1889,7 @@ def render():
                                         st.write("**手續費壓力測試**")
                                         
                                         # 短線交易分析
-                                        short_trades = risk_analyzer.analyze_short_term_trades(5.0)
+                                        short_trades = risk_officer.analyze_short_term_trades(5.0)
                                         
                                         if short_trades.get('count', 0) > 0:
                                             st.write("**短線交易（<5分鐘）分析**")
@@ -1919,7 +1909,7 @@ def render():
                                                 st.caption(f"手續費 {short_trades['total_fee']:.2f}")
                                             
                                             # 模擬停止短線交易
-                                            simulation = risk_analyzer.simulate_without_short_trades(5.0)
+                                            simulation = risk_officer.simulate_without_short_trades(5.0)
                                             
                                             if 'pnl_difference' in simulation:
                                                 st.write("**💡 模擬：停止所有短線交易**")
@@ -2125,7 +2115,7 @@ def render():
                                         st.write("**情緒失控係數分析**")
                                         
                                         # 獲取情緒控制分析
-                                        emotional = risk_analyzer.analyze_emotional_control()
+                                        emotional = risk_officer.analyze_emotional_control()
                                         
                                         # 情緒控制評分
                                         emo_col1, emo_col2, emo_col3 = st.columns(3)
@@ -2216,7 +2206,7 @@ def render():
                                         st.write("**能力維度評分 (0-10分)**")
                                         
                                         # 獲取能力評分
-                                        skills = risk_analyzer.calculate_skill_dimensions()
+                                        skills = risk_officer.calculate_skill_dimensions()
                                         
                                         # 綜合評分
                                         st.metric(
@@ -2354,9 +2344,9 @@ def render():
                                 if max_streak['max_streak'] > 10:
                                     suggestions.append("🔴 **緊急**：連續虧損過多，策略可能在某些市場環境下失效")
                                 
-                                short_trades = risk_analyzer.analyze_short_term_trades(5.0)
+                                short_trades = risk_officer.analyze_short_term_trades(5.0)
                                 if short_trades.get('count', 0) > 0 and short_trades.get('expectancy', 0) < 0:
-                                    simulation = risk_analyzer.simulate_without_short_trades(5.0)
+                                    simulation = risk_officer.simulate_without_short_trades(5.0)
                                     if simulation.get('pnl_improvement_pct', 0) > 10:
                                         suggestions.append(f"🟡 **建議**：停止所有 5 分鐘內的短線交易，可改善淨值 {simulation['pnl_improvement_pct']:.1f}%")
                                 
@@ -2388,7 +2378,7 @@ def render():
                                     st.success("✅ 當前風險指標在可控範圍內，繼續保持！")
                                 
                             except ImportError:
-                                st.warning("⚠️ 量化風險分析模組未安裝。請確保已正確安裝 src.analysis.quantitative_risk 模組。")
+                                st.warning("⚠️ 量化風險分析模組未安裝。請確保 quantitative_risk_analysis.py 在同一目錄下。")
                             except Exception as e:
                                 st.error(f"❌ 量化風險分析失敗：{e}")
                                 import traceback

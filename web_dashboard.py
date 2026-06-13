@@ -39,7 +39,7 @@ if page == "📊 回測結果":
     
     if not result_files:
         st.warning("⚠️ 沒有找到回測結果文件")
-        st.info("請先運行回測：`python3 backtest_multi_timeframe.py`")
+        st.info("請先運行回測：`python3 -m cli_commands.backtest --strategy multi-timeframe-aggressive`")
     else:
         # 選擇回測結果
         selected_file = st.selectbox(
@@ -179,12 +179,50 @@ if page == "📊 回測結果":
 elif page == "📈 槓桿對比":
     st.header("📈 槓桿對比分析")
     
+    # 添加執行按鈕
+    st.info("💡 槓桿對比將測試 1x, 2x, 3x, 5x, 10x, 20x 槓桿（約需 2-3 分鐘）")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🚀 執行槓桿對比回測", use_container_width=True, type="primary"):
+            with st.spinner("正在執行槓桿對比回測，請稍候..."):
+                import subprocess
+                result = subprocess.run(
+                    ['python3', 'backtest_leverage_comparison.py'],
+                    capture_output=True,
+                    text=True,
+                    timeout=300  # 5 分鐘超時
+                )
+                
+                if result.returncode == 0:
+                    st.success("✅ 槓桿對比完成！結果已保存。")
+                    st.balloons()
+                    # 顯示執行摘要
+                    with st.expander("查看執行日誌"):
+                        st.code(result.stdout[-2000:])  # 顯示最後 2000 字符
+                    st.rerun()  # 重新載入頁面以顯示新結果
+                else:
+                    st.error("❌ 執行失敗")
+                    st.code(result.stderr)
+    
+    with col2:
+        st.markdown("""
+        **測試內容**:
+        - 激進模式（1.5 ATR 止損）
+        - 輕鬆模式（2.0 ATR 止損）
+        - 每個模式測試 6 個槓桿
+        - 共 12 次回測
+        """)
+    
+    st.divider()
+    
     # 查找槓桿對比文件
     leverage_files = glob.glob('leverage_comparison_*.csv')
     
     if not leverage_files:
         st.warning("⚠️ 沒有找到槓桿對比結果")
-        st.info("請先運行：`python3 backtest_leverage_comparison.py`")
+        st.info("👆 點擊上方按鈕執行槓桿對比回測")
     else:
         # 選擇文件
         selected_file = st.selectbox(
@@ -611,7 +649,7 @@ elif page == "🎯 快速操作":
         if st.button("🚀 運行激進模式回測", width="stretch"):
             with st.spinner("正在運行回測..."):
                 import subprocess
-                result = subprocess.run(['python3', 'backtest_multi_timeframe.py'], 
+                result = subprocess.run(['python3', '-m', 'cli_commands.backtest', '--strategy', 'multi-timeframe-aggressive'], 
                                       capture_output=True, text=True)
                 if result.returncode == 0:
                     st.success("✅ 回測完成！")
@@ -684,7 +722,7 @@ st.sidebar.success("""
 **快速命令**
 ```bash
 # 運行回測
-python3 backtest_multi_timeframe.py
+python3 -m cli_commands.backtest --strategy multi-timeframe-aggressive
 
 # 查看結果
 python3 快速查看.py

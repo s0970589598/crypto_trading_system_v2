@@ -10,7 +10,6 @@ import statistics
 
 from src.models.trading import Trade
 from src.models.backtest import BacktestResult
-from src.analysis.quantitative_risk import QuantitativeRiskAnalyzer
 
 
 @dataclass
@@ -127,9 +126,6 @@ class PerformanceMonitor:
         
         # 策略狀態：strategy_id -> bool (是否已暫停)
         self.strategy_halted: Dict[str, bool] = {}
-        
-        # 量化風險分析器（可選功能，默認不啟用）
-        self._quantitative_analyzer: Optional[QuantitativeRiskAnalyzer] = None
     
     def set_backtest_baseline(self, strategy_id: str, backtest_result: BacktestResult) -> None:
         """設置回測基準
@@ -827,53 +823,3 @@ class PerformanceMonitor:
         report.append("=" * 80)
         
         return "\n".join(report)
-
-    # ==================== 量化風險分析功能（可選） ====================
-    
-    def enable_quantitative_analysis(self, trades_data_path: str = None) -> None:
-        """啟用量化風險分析（可選功能）
-        
-        Args:
-            trades_data_path: 交易數據路徑（可選）
-        """
-        self._quantitative_analyzer = QuantitativeRiskAnalyzer(trades_data_path)
-    
-    def calculate_recovery_factor(self) -> Optional[Dict]:
-        """計算恢復係數
-        
-        Returns:
-            Optional[Dict]: 恢復係數分析結果，如果未啟用量化分析則返回 None
-        """
-        if self._quantitative_analyzer is None:
-            return None
-        return self._quantitative_analyzer.calculate_recovery_factor()
-    
-    def analyze_emotional_control(self) -> Optional[Dict]:
-        """分析情緒控制
-        
-        Returns:
-            Optional[Dict]: 情緒控制分析結果，如果未啟用量化分析則返回 None
-        """
-        if self._quantitative_analyzer is None:
-            return None
-        return self._quantitative_analyzer.analyze_emotional_control()
-    
-    def calculate_skill_dimensions(self) -> Optional[Dict]:
-        """計算能力維度評分
-        
-        Returns:
-            Optional[Dict]: 能力維度評分結果，如果未啟用量化分析則返回 None
-        """
-        if self._quantitative_analyzer is None:
-            return None
-        return self._quantitative_analyzer.calculate_skill_dimensions()
-    
-    def calculate_max_losing_streak(self) -> Optional[Dict]:
-        """計算最長連損
-        
-        Returns:
-            Optional[Dict]: 最長連損分析結果，如果未啟用量化分析則返回 None
-        """
-        if self._quantitative_analyzer is None:
-            return None
-        return self._quantitative_analyzer.calculate_max_losing_streak()

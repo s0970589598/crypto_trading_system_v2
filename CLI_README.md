@@ -142,7 +142,104 @@ python3 cli.py live --strategies multi-timeframe-aggressive \
 
 觸發任何限制時，系統會自動暫停交易。
 
-### 3. 參數優化命令 (optimize)
+### 3. 量化風險分析命令 (analyze_risk)
+
+量化風險分析命令用於對交易數據進行深度風險分析，提供多種量化指標。
+
+#### 基本用法
+
+```bash
+# 顯示所有分析
+python3 -m cli_commands.analyze_risk --data trades.csv
+
+# 只顯示 Kelly Criterion
+python3 -m cli_commands.analyze_risk --data trades.csv --analysis kelly
+
+# 分析短線交易（10分鐘）
+python3 -m cli_commands.analyze_risk --data trades.csv --analysis short --short-minutes 10
+
+# 輸出到 JSON 文件
+python3 -m cli_commands.analyze_risk --data trades.csv --output result.json
+
+# JSON 格式輸出到終端
+python3 -m cli_commands.analyze_risk --data trades.csv --format json
+
+# 詳細模式
+python3 -m cli_commands.analyze_risk --data trades.csv --verbose
+```
+
+#### 參數說明
+
+- `--data`: 交易數據文件路徑（CSV 格式，必需）
+- `--analysis`: 分析類型，默認 all（可選）
+  - `all`: 所有分析
+  - `kelly`: Kelly Criterion 最優倉位
+  - `tilt`: 傾斜行為檢測
+  - `ror`: 破產風險分析
+  - `fee`: 手續費壓力分析
+  - `recovery`: 恢復係數計算
+  - `emotional`: 情緒控制分析
+  - `skill`: 能力維度評分
+  - `streak`: 最長連損分析
+  - `short`: 短線交易分析
+  - `cooling`: 冷靜期建議
+- `--short-minutes`: 短線交易時間閾值（分鐘），默認 5.0（可選）
+- `--output`: 輸出結果到文件（JSON 格式，可選）
+- `--format`: 輸出格式（text/json），默認 text（可選）
+- `--verbose`: 顯示詳細信息（可選）
+
+#### 分析類型說明
+
+| 分析類型 | 說明 | 主要指標 |
+|---------|------|---------|
+| **Kelly Criterion** | 計算最優倉位大小 | 最優倉位、建議倉位、期望值 |
+| **傾斜行為** | 檢測情緒化交易 | 綜合評分、嚴重程度、貢獻因素 |
+| **破產風險** | 計算破產概率 | 破產風險、連續虧損概率 |
+| **手續費壓力** | 分析手續費影響 | 手續費佔比、手續費/虧損比 |
+| **恢復係數** | 評估恢復能力 | 恢復係數、最大回撤 |
+| **情緒控制** | 分析情緒控制 | 情緒評分、虧損後行為變化 |
+| **能力評分** | 評估交易能力 | 方向判斷、風險管理、心理韌性 |
+| **最長連損** | 分析連續虧損 | 最長連損次數、連損期間虧損 |
+| **短線交易** | 分析短線交易效果 | 短線交易數、期望值、建議 |
+| **冷靜期** | 提供冷靜期建議 | 是否需要冷靜、建議天數 |
+
+#### 輸出示例
+
+```
+================================================================================
+量化風險分析報告
+================================================================================
+
+分析時間: 2026-02-11 10:30:00
+分析類型: 所有分析
+
+--------------------------------------------------------------------------------
+KELLY_CRITERION
+--------------------------------------------------------------------------------
+kelly_optimal_size: 0.1520
+kelly_recommended_size: 0.0760
+win_rate: 0.5230
+payoff_ratio: 1.4500
+expectancy: 0.0890
+risk_of_ruin: 0.0230
+
+--------------------------------------------------------------------------------
+TILT_BEHAVIOR
+--------------------------------------------------------------------------------
+overall_score: 3.2000
+severity: low
+position_size_factor: 1.2000
+leverage_factor: 1.1000
+timing_factor: 0.9000
+frequency_factor: 1.0000
+contributing_factors: ["虧損後倉位略有增加"]
+
+... (其他分析)
+
+================================================================================
+```
+
+### 4. 參數優化命令 (optimize)
 
 參數優化命令用於自動尋找最佳策略參數。
 

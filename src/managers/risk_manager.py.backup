@@ -8,7 +8,6 @@ from datetime import datetime
 from src.models.risk import RiskConfig, GlobalRiskState, RiskEvent
 from src.models.trading import Signal, Trade
 from src.models.state import StrategyState
-from src.analysis.quantitative_risk import QuantitativeRiskAnalyzer
 
 
 class RiskManager:
@@ -36,9 +35,6 @@ class RiskManager:
             peak_capital=initial_capital,
             daily_start_capital=initial_capital,
         )
-        
-        # 量化風險分析器（可選功能，默認不啟用）
-        self._quantitative_analyzer: Optional[QuantitativeRiskAnalyzer] = None
     
     def check_global_risk(self) -> Tuple[bool, str]:
         """檢查全局風險限制
@@ -302,53 +298,3 @@ class RiskManager:
             GlobalRiskState: 全局風險狀態
         """
         return self.global_state
-
-    # ==================== 量化風險分析功能（可選） ====================
-    
-    def enable_quantitative_analysis(self, trades_data_path: str = None) -> None:
-        """啟用量化風險分析（可選功能）
-        
-        Args:
-            trades_data_path: 交易數據路徑（可選）
-        """
-        self._quantitative_analyzer = QuantitativeRiskAnalyzer(trades_data_path)
-    
-    def calculate_kelly_criterion(self) -> Optional[Dict]:
-        """計算 Kelly Criterion 最優倉位
-        
-        Returns:
-            Optional[Dict]: Kelly Criterion 結果，如果未啟用量化分析則返回 None
-        """
-        if self._quantitative_analyzer is None:
-            return None
-        return self._quantitative_analyzer.calculate_ror_kelly()
-    
-    def detect_tilt_behavior(self) -> Optional[Dict]:
-        """檢測傾斜行為（情緒化交易）
-        
-        Returns:
-            Optional[Dict]: 傾斜行為分析結果，如果未啟用量化分析則返回 None
-        """
-        if self._quantitative_analyzer is None:
-            return None
-        return self._quantitative_analyzer.detect_tilt_behavior()
-    
-    def calculate_risk_of_ruin(self) -> Optional[Dict]:
-        """計算破產風險
-        
-        Returns:
-            Optional[Dict]: 破產風險分析結果，如果未啟用量化分析則返回 None
-        """
-        if self._quantitative_analyzer is None:
-            return None
-        return self._quantitative_analyzer.calculate_risk_of_ruin()
-    
-    def calculate_fee_pressure(self) -> Optional[Dict]:
-        """計算手續費壓力
-        
-        Returns:
-            Optional[Dict]: 手續費壓力分析結果，如果未啟用量化分析則返回 None
-        """
-        if self._quantitative_analyzer is None:
-            return None
-        return self._quantitative_analyzer.calculate_fee_pressure()

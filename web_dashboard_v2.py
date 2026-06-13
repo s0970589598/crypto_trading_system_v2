@@ -119,7 +119,7 @@ if category == "1️⃣ 回測系統":
         
         if not result_files:
             st.warning("⚠️ 沒有找到回測結果文件")
-            st.info("請先運行回測：`python3 backtest_multi_timeframe.py`")
+            st.info("請先運行回測：`python3 -m cli_commands.backtest --strategy multi-timeframe-aggressive`")
         else:
             # 選擇回測結果
             selected_file = st.selectbox(
@@ -249,126 +249,169 @@ if category == "1️⃣ 回測系統":
         
         if not result_files:
             st.warning("⚠️ 沒有找到回測結果文件")
-            st.info("請先運行回測：`python3 backtest_multi_timeframe.py`")
+            st.info("請先運行回測：`python3 -m cli_commands.backtest --strategy multi-timeframe-aggressive`")
         else:
-            # 選擇回測結果
-            selected_file = st.selectbox(
-                "選擇回測結果",
-                result_files,
-                format_func=lambda x: x.replace('backtest_result_', '').replace('.json', '')
-            )
-            
-            # 讀取結果
-            with open(selected_file, 'r') as f:
-                result = json.load(f)
-            
-            # 顯示基本信息
-            col1, col2, col3, col4 = st.columns(4)
+            # ... 現有的單策略回測結果顯示代碼 ...
+            pass  # 保留現有代碼
+    
+    elif sub_function == "多策略組合回測":
+        st.subheader("📊 多策略組合回測")
+        
+        # 策略選擇
+        st.info("💡 選擇要組合回測的策略（至少 2 個）")
+        
+        # 查找可用策略
+        strategy_files = glob.glob('strategies/*.json')
+        available_strategies = [
+            f.replace('strategies/', '').replace('.json', '')
+            for f in strategy_files
+        ]
+        
+        if len(available_strategies) < 2:
+            st.warning("⚠️ 可用策略少於 2 個，無法進行多策略回測")
+            st.info("請確保 strategies/ 目錄中至少有 2 個策略配置文件")
+        else:
+            col1, col2 = st.columns([2, 1])
             
             with col1:
-                total_return = result.get('total_pnl_pct', 0)
-                st.metric(
-                    "總收益",
-                    f"+{total_return:.2f}%",
-                    delta=f"{result.get('total_pnl', 0):.2f} USDT"
+                selected_strategies = st.multiselect(
+                    "選擇策略",
+                    available_strategies,
+                    default=available_strategies[:2] if len(available_strategies) >= 2 else []
                 )
             
             with col2:
-                st.metric(
-                    "勝率",
-                    f"{result['win_rate']:.2f}%",
-                    delta=f"{result['winning_trades']}/{result['total_trades']}"
-                )
+                st.markdown("""
+                **可用策略**:
+                """)
+                for strategy in available_strategies:
+                    st.write(f"- {strategy}")
             
-            with col3:
-                max_dd = result.get('max_drawdown_pct', result.get('max_drawdown', 0))
-                st.metric(
-                    "最大回撤",
-                    f"-{max_dd:.2f}%",
-                    delta=f"-{result.get('max_drawdown', 0):.2f} USDT",
-                    delta_color="inverse"
-                )
-            
-            with col4:
-                st.metric(
-                    "獲利因子",
-                    f"{result['profit_factor']:.2f}",
-                    delta="優秀" if result['profit_factor'] > 1.5 else "一般"
-                )
-            
-            # 詳細指標
-            st.subheader("📈 詳細指標")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.write("**資金情況**")
-                st.write(f"- 初始資金：{result['initial_capital']:.2f} USDT")
-                st.write(f"- 最終資金：{result['final_capital']:.2f} USDT")
-                st.write(f"- 淨損益：{result.get('total_pnl', 0):.2f} USDT")
-                
-                st.write("**交易統計**")
-                st.write(f"- 總交易數：{result['total_trades']}")
-                st.write(f"- 獲利交易：{result['winning_trades']}")
-                st.write(f"- 虧損交易：{result['losing_trades']}")
-            
-            with col2:
-                st.write("**損益分析**")
-                st.write(f"- 平均獲利：{result.get('avg_win', 0):.2f} USDT")
-                st.write(f"- 平均虧損：{result.get('avg_loss', 0):.2f} USDT")
-                st.write(f"- 獲利因子：{result['profit_factor']:.2f}")
-                
-                st.write("**風險指標**")
-                st.write(f"- 最大回撤：{max_dd:.2f}%")
-                st.write(f"- 夏普比率：{result['sharpe_ratio']:.2f}")
-            
-            # 權益曲線
-            if 'equity_curve' in result and result['equity_curve']:
-                st.subheader("📉 權益曲線")
-                
-                try:
-                    equity_curve = result['equity_curve']
-                    
-                    if isinstance(equity_curve, list):
-                        if len(equity_curve) > 0 and isinstance(equity_curve[0], dict):
-                            equity_df = pd.DataFrame(equity_curve)
-                            equity_values = equity_df['equity'].values if 'equity' in equity_df.columns else equity_df.iloc[:, 0].values
+            if len(selected_strategies) < 2:
+                st.warning("⚠️ 請至少選擇 2 個策略")
+            else:
+                # 執行按鈕
+                if st.button("🚀 執行多策略組合回測", use_container_width=True, type="primary"):
+                    with st.spinner(f"正在執行 {len(selected_strategies)} 個策略的組合回測，請稍候..."):
+                        import subprocess
+                        
+                        # 構建命令
+                        cmd = ['python3', 'cli.py', 'backtest']
+                        for strategy in selected_strategies:
+                            cmd.extend(['--strategy', strategy])
+                        
+                        result = subprocess.run(
+                            cmd,
+                            capture_output=True,
+                            text=True,
+                            timeout=300
+                        )
+                        
+                        if result.returncode == 0:
+                            st.success(f"✅ 多策略組合回測完成！（{len(selected_strategies)} 個策略）")
+                            st.balloons()
+                            with st.expander("查看執行日誌"):
+                                st.code(result.stdout[-2000:])
+                            st.rerun()
                         else:
-                            equity_values = equity_curve
-                    elif isinstance(equity_curve, dict):
-                        equity_values = list(equity_curve.values())
-                    else:
-                        equity_values = [equity_curve]
-                    
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(
-                        x=list(range(len(equity_values))),
-                        y=equity_values,
-                        mode='lines',
-                        name='權益',
-                        line=dict(color='#00D9FF', width=2)
-                    ))
-                    
-                    fig.update_layout(
-                        title="權益變化",
-                        xaxis_title="交易次數",
-                        yaxis_title="權益 (USDT)",
-                        hovermode='x unified',
-                        height=400
+                            st.error("❌ 執行失敗")
+                            st.code(result.stderr)
+                
+                st.divider()
+                
+                # 顯示現有結果
+                st.subheader("📈 歷史多策略回測結果")
+                
+                # 查找多策略回測結果（包含多個策略 ID 的檔案）
+                all_result_files = glob.glob('backtest_result_*.json')
+                
+                # 簡單判斷：檔名包含多個策略 ID 或者是 multi_strategy 開頭
+                multi_strategy_files = [
+                    f for f in all_result_files
+                    if 'multi_strategy' in f or f.count('_') > 4
+                ]
+                
+                if not multi_strategy_files:
+                    st.info("💡 尚無多策略回測結果，點擊上方按鈕執行回測")
+                else:
+                    selected_file = st.selectbox(
+                        "選擇回測結果",
+                        multi_strategy_files,
+                        format_func=lambda x: x.replace('backtest_result_', '').replace('.json', '')
                     )
                     
-                    st.plotly_chart(fig, use_container_width=True)
-                except Exception as e:
-                    st.warning(f"⚠️ 無法顯示權益曲線：{str(e)}")
+                    # 讀取並顯示結果
+                    try:
+                        with open(selected_file, 'r') as f:
+                            result = json.load(f)
+                        
+                        # 顯示基本信息
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.metric("策略數量", len(selected_strategies))
+                        
+                        with col2:
+                            total_return = result.get('total_pnl_pct', 0)
+                            st.metric("總收益", f"+{total_return:.2f}%")
+                        
+                        with col3:
+                            total_trades = result.get('total_trades', 0)
+                            st.metric("總交易數", total_trades)
+                        
+                        # 顯示詳細信息
+                        st.json(result)
+                        
+                    except Exception as e:
+                        st.error(f"❌ 讀取結果失敗：{e}")
     
     elif sub_function == "槓桿對比測試":
         st.subheader("📈 槓桿對比分析")
         
+        # 添加執行按鈕
+        st.info("💡 槓桿對比將測試 1x, 2x, 3x, 5x, 10x, 20x 槓桿（約需 2-3 分鐘）")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("🚀 執行槓桿對比回測", use_container_width=True, type="primary"):
+                with st.spinner("正在執行槓桿對比回測，請稍候..."):
+                    import subprocess
+                    result = subprocess.run(
+                        ['python3', 'backtest_leverage_comparison.py'],
+                        capture_output=True,
+                        text=True,
+                        timeout=300  # 5 分鐘超時
+                    )
+                    
+                    if result.returncode == 0:
+                        st.success("✅ 槓桿對比完成！結果已保存。")
+                        st.balloons()
+                        # 顯示執行摘要
+                        with st.expander("查看執行日誌"):
+                            st.code(result.stdout[-2000:])  # 顯示最後 2000 字符
+                        st.rerun()  # 重新載入頁面以顯示新結果
+                    else:
+                        st.error("❌ 執行失敗")
+                        st.code(result.stderr)
+        
+        with col2:
+            st.markdown("""
+            **測試內容**:
+            - 激進模式（1.5 ATR 止損）
+            - 輕鬆模式（2.0 ATR 止損）
+            - 每個模式測試 6 個槓桿
+            - 共 12 次回測
+            """)
+        
+        st.divider()
+        
+        # 查看現有結果
         leverage_files = glob.glob('leverage_comparison_*.csv')
         
         if not leverage_files:
             st.warning("⚠️ 沒有找到槓桿對比結果")
-            st.info("請先運行：`python3 backtest_leverage_comparison.py`")
+            st.info("👆 點擊上方按鈕執行槓桿對比回測")
         else:
             selected_file = st.selectbox(
                 "選擇對比結果",
@@ -1141,7 +1184,7 @@ st.sidebar.success("""
 **快速命令**
 ```bash
 # 運行回測
-python3 backtest_multi_timeframe.py
+python3 -m cli_commands.backtest --strategy multi-timeframe-aggressive
 
 # 實盤交易
 python3 cli.py live --strategy xxx

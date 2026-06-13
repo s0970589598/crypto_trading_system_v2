@@ -8,6 +8,21 @@ from .performance_monitor import (
     PerformanceMetrics,
     AlertConfig
 )
+from .quantitative_risk import (
+    QuantitativeRiskAnalyzer,
+    KellyCriterionCalculator,
+    TiltDetector,
+    EmotionalControlAnalyzer,
+    SkillDimensionScorer,
+    FeeAnalyzer,
+    CoolingPeriodChecker,
+    TiltScore,
+    KellyCriterion,
+    EmotionalControl,
+    SkillDimensions,
+    CoolingPeriodRecommendation,
+    FeeAnalysis,
+)
 
 __all__ = [
     'LossAnalyzer',
@@ -16,4 +31,17 @@ __all__ = [
     'PerformanceMonitor',
     'PerformanceMetrics',
     'AlertConfig',
+    'QuantitativeRiskAnalyzer',
+    'KellyCriterionCalculator',
+    'TiltDetector',
+    'EmotionalControlAnalyzer',
+    'SkillDimensionScorer',
+    'FeeAnalyzer',
+    'CoolingPeriodChecker',
+    'TiltScore',
+    'KellyCriterion',
+    'EmotionalControl',
+    'SkillDimensions',
+    'CoolingPeriodRecommendation',
+    'FeeAnalysis',
 ]

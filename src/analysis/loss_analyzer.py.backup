@@ -10,7 +10,6 @@ from datetime import datetime
 import pandas as pd
 
 from ..models.trading import Trade
-from .quantitative_risk import QuantitativeRiskAnalyzer
 
 
 @dataclass
@@ -69,9 +68,6 @@ class LossAnalyzer:
         """
         self.custom_rules = custom_rules or {}
         self.loss_history: List[LossAnalysis] = []
-        
-        # 量化風險分析器（可選功能，默認不啟用）
-        self._quantitative_analyzer: Optional[QuantitativeRiskAnalyzer] = None
     
     def analyze_trade(
         self,
@@ -565,59 +561,3 @@ class LossAnalyzer:
         report.append("\n" + "=" * 80)
         
         return "\n".join(report)
-
-    # ==================== 量化風險分析功能（可選） ====================
-    
-    def enable_quantitative_analysis(self, trades_data_path: str = None) -> None:
-        """啟用量化風險分析（可選功能）
-        
-        Args:
-            trades_data_path: 交易數據路徑（可選）
-        """
-        self._quantitative_analyzer = QuantitativeRiskAnalyzer(trades_data_path)
-    
-    def calculate_max_losing_streak(self) -> Optional[Dict]:
-        """計算最長連損
-        
-        Returns:
-            Optional[Dict]: 最長連損分析結果，如果未啟用量化分析則返回 None
-        """
-        if self._quantitative_analyzer is None:
-            return None
-        return self._quantitative_analyzer.calculate_max_losing_streak()
-    
-    def analyze_short_term_trades(self, minutes: float = 5.0) -> Optional[Dict]:
-        """分析短線交易
-        
-        Args:
-            minutes: 短線交易的時間閾值（分鐘）
-        
-        Returns:
-            Optional[Dict]: 短線交易分析結果，如果未啟用量化分析則返回 None
-        """
-        if self._quantitative_analyzer is None:
-            return None
-        return self._quantitative_analyzer.analyze_short_term_trades(minutes)
-    
-    def simulate_without_short_trades(self, minutes: float = 5.0) -> Optional[Dict]:
-        """模擬停止短線交易的效果
-        
-        Args:
-            minutes: 短線交易的時間閾值（分鐘）
-        
-        Returns:
-            Optional[Dict]: 模擬結果，如果未啟用量化分析則返回 None
-        """
-        if self._quantitative_analyzer is None:
-            return None
-        return self._quantitative_analyzer.simulate_without_short_trades(minutes)
-    
-    def check_cooling_period(self) -> Optional[Dict]:
-        """檢查冷靜期建議
-        
-        Returns:
-            Optional[Dict]: 冷靜期建議，如果未啟用量化分析則返回 None
-        """
-        if self._quantitative_analyzer is None:
-            return None
-        return self._quantitative_analyzer.check_cooling_period()

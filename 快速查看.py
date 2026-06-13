@@ -70,7 +70,7 @@ try:
     print(f"\n💡 推薦：{best_lev}x 槓桿（最佳風險調整收益）")
     
 except FileNotFoundError:
-    print("⚠️ 請先運行：python3 backtest_leverage_comparison.py")
+    print("⚠️ 沒有槓桿對比結果")
 
 # 3. 可用策略
 print("\n" + "=" * 70)
@@ -104,18 +104,15 @@ print("🎯 快速命令")
 print("-" * 70)
 print("""
 1️⃣ 運行回測：
-   python3 backtest_multi_timeframe.py
+   python3 -m cli_commands.backtest --strategy multi-timeframe-aggressive
 
-2️⃣ 測試槓桿：
-   python3 backtest_leverage_comparison.py
-
-3️⃣ 查看結果：
+2️⃣ 查看結果：
    python3 快速查看.py
 
-4️⃣ 閱讀教學：
+3️⃣ 閱讀教學：
    open 新手入門教學.md
 
-5️⃣ 查看策略：
+4️⃣ 查看策略：
    open PROGRESSIVE_POSITION_STRATEGY.md
 """)
 
