@@ -23,6 +23,11 @@ pyyaml>=6.0
 
 # 日期時間處理
 python-dateutil>=2.8.2
+pytz>=2023.3  # market_analyzer 時區處理（原本漏列）
 
 # 可選：參數優化
 scikit-optimize>=0.9.0  # 貝葉斯優化
+
+# Web 儀表板與視覺化（web_dashboard / pages.review）
+streamlit>=1.30.0
+plotly>=5.18.0
