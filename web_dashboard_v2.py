@@ -90,7 +90,8 @@ category = st.sidebar.radio(
         "7️⃣ 策略管理",
         "8️⃣ 風險管理",
         "9️⃣ 數據管理",
-        "🔟 系統配置"
+        "🔟 系統配置",
+        "🔁 閉環驗證"
     ]
 )
 
@@ -1170,6 +1171,181 @@ elif category == "🔟 系統配置":
     
     except Exception as e:
         st.error(f"❌ 讀取配置失敗：{str(e)}")
+
+# ==================== 🔁 閉環驗證（Walk-forward + 策略選擇）====================
+elif category == "🔁 閉環驗證":
+    st.header("🔁 閉環驗證（Walk-forward + 策略選擇）")
+    st.caption("用誠實引擎做 out-of-sample 前進驗證，套成功門檻選出可信、可上線的策略")
+
+    # 誠實橫幅：讓使用者帶正確 caveat 讀數字
+    st.info(
+        "✅ **已建模**：滑點、強平(爆倉)、盤中止損/止盈、分批止盈(tp1/tp2)、MFE 利潤保護　｜　"
+        "⚠️ **未建模(估計偏樂觀)**：時間停損、權益守護者、部位權益縮放"
+    )
+
+    from src.managers.strategy_manager import StrategyManager
+    from src.analysis.strategy_selector import StrategySelector, SuccessCriteria
+
+    sm = StrategyManager(strategies_dir="strategies/")
+    try:
+        sm.load_strategies()
+    except Exception as e:
+        st.error(f"載入策略失敗：{e}")
+    strategy_ids = list(sm.strategies.keys())
+
+    if not strategy_ids:
+        st.warning("⚠️ strategies/ 沒有可載入的策略")
+        st.caption("（scalping 需待真實 v11 的 from-config 接線後才會出現；目前可驗證內建策略）")
+    else:
+        picked = st.multiselect("選擇候選策略", strategy_ids, default=strategy_ids[:1])
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            symbol = st.selectbox("交易對", ["BTCUSDT", "ETHUSDT"])
+        with c2:
+            n_windows = int(st.number_input("Walk-forward 窗數", 2, 8, 3))
+        with c3:
+            train_ratio = st.slider("初始訓練比例", 0.3, 0.8, 0.5, 0.05)
+
+        st.write("**參數網格**（值用逗號分隔；留空=只驗 base config 不優化）")
+        g1, g2 = st.columns(2)
+        with g1:
+            grid_param = st.text_input("參數名", "risk_management.leverage")
+        with g2:
+            grid_values = st.text_input("候選值（逗號分隔）", "1, 2, 3")
+
+        with st.expander("成功門檻設定"):
+            mc1, mc2 = st.columns(2)
+            with mc1:
+                min_sharpe = st.number_input("最低 OOS Sharpe", 0.0, 5.0, 1.0, 0.1)
+                min_trades = int(st.number_input("最低 OOS 交易數", 0, 1000, 100, 10))
+            with mc2:
+                max_dd = st.number_input("最大回撤上限 %", 1.0, 100.0, 20.0, 1.0)
+                must_beat = st.checkbox("須贏過抱 BTC", value=True)
+
+        if st.button("🚀 跑 walk-forward 驗證", type="primary"):
+            # 載入候選需要的所有週期資料
+            needed_tfs = set()
+            for sid in picked:
+                needed_tfs.update(sm.strategies[sid].config.timeframes)
+            market_data = {}
+            missing = []
+            for tf in needed_tfs:
+                path = f"market_data_{symbol}_{tf}.csv"
+                if Path(path).exists():
+                    df = pd.read_csv(path)
+                    df['timestamp'] = pd.to_datetime(df['timestamp'])
+                    market_data[tf] = df
+                else:
+                    missing.append(tf)
+
+            if not market_data:
+                st.error(f"❌ 找不到 {symbol} 的市場資料（需要週期：{sorted(needed_tfs)}）")
+            elif not picked:
+                st.warning("請至少選一個候選策略")
+            else:
+                if missing:
+                    st.warning(f"⚠️ 缺少週期資料：{missing}，相關策略可能無法完整回測")
+                # 組候選
+                candidates = []
+                for sid in picked:
+                    strat = sm.strategies[sid]
+                    candidates.append({
+                        'name': sid,
+                        'strategy_class': type(strat),
+                        'base_config': strat.config.to_dict(),
+                    })
+                # 參數網格
+                param_grid = {}
+                vals = [v.strip() for v in grid_values.split(',') if v.strip()]
+                if grid_param.strip() and vals:
+                    parsed = []
+                    for v in vals:
+                        try:
+                            parsed.append(int(v) if v.lstrip('-').isdigit() else float(v))
+                        except ValueError:
+                            parsed.append(v)
+                    param_grid = {grid_param.strip(): parsed}
+                # 基準週期：優先 1h
+                bench_tf = '1h' if '1h' in market_data else sorted(market_data.keys())[0]
+                criteria = SuccessCriteria(
+                    min_oos_sharpe=min_sharpe, min_oos_trades=min_trades,
+                    max_drawdown_pct=max_dd, must_beat_benchmark=must_beat,
+                )
+                selector = StrategySelector(
+                    market_data, criteria=criteria, slippage=0.0005,
+                    benchmark_timeframe=bench_tf,
+                )
+                try:
+                    with st.spinner("跑 walk-forward 中（依資料量與網格大小，數秒~數分鐘）..."):
+                        result = selector.evaluate(
+                            candidates, param_grid,
+                            n_windows=n_windows, initial_train_ratio=train_ratio,
+                        )
+                    st.session_state['cl_result'] = result
+                except Exception as e:
+                    st.error(f"❌ 驗證失敗：{e}")
+
+    # ---- 顯示結果 ----
+    result = st.session_state.get('cl_result')
+    if result is not None and result.results:
+        st.divider()
+        # 贏家
+        if result.winner is not None:
+            st.success(f"🏆 通過門檻的最佳策略：**{result.winner.name}**"
+                       f"（OOS Sharpe {result.winner.oos_sharpe:.2f}）")
+        else:
+            st.error("❌ 無策略通過成功門檻——這是誠實結果：不要把它們推上實盤。")
+
+        # 排名表
+        st.subheader("📋 候選排名（依 OOS Sharpe）")
+        rows = []
+        for r in result.results:
+            rows.append({
+                '策略': r.name,
+                '通過': '✅' if r.passed else '❌',
+                'OOS Sharpe': round(r.oos_sharpe, 3),
+                'IS Sharpe': round(r.walk_forward.mean_is_score, 3),
+                '過擬合落差': round(r.walk_forward.overfit_gap, 3),
+                'OOS報酬%': round(r.oos_cumulative_return_pct, 2),
+                '抱BTC%': round(r.benchmark_return_pct, 2),
+                '最差回撤%': round(r.worst_drawdown_pct, 2),
+                'OOS交易': r.walk_forward.total_oos_trades,
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+        # in-sample vs out-of-sample 對比（防過擬合核心視覺）
+        st.subheader("📈 in-sample vs out-of-sample（落差大 = 過擬合）")
+        names = [r.name for r in result.results]
+        fig = go.Figure()
+        fig.add_bar(name='in-sample Sharpe', x=names,
+                    y=[r.walk_forward.mean_is_score for r in result.results])
+        fig.add_bar(name='out-of-sample Sharpe', x=names,
+                    y=[r.oos_sharpe for r in result.results])
+        fig.add_hline(y=result.criteria.min_oos_sharpe, line_dash="dash",
+                      annotation_text=f"OOS 門檻 {result.criteria.min_oos_sharpe}")
+        fig.update_layout(barmode='group', yaxis_title='Sharpe')
+        st.plotly_chart(fig, use_container_width=True)
+
+        # vs 抱 BTC
+        st.subheader("💰 OOS 報酬 vs 抱 BTC")
+        fig2 = go.Figure()
+        fig2.add_bar(name='策略 OOS 報酬%', x=names,
+                     y=[r.oos_cumulative_return_pct for r in result.results])
+        fig2.add_hline(y=result.results[0].benchmark_return_pct, line_dash="dash",
+                       annotation_text=f"抱 BTC {result.results[0].benchmark_return_pct:.1f}%")
+        fig2.update_layout(yaxis_title='報酬 %')
+        st.plotly_chart(fig2, use_container_width=True)
+
+        # 逐策略門檻燈號
+        st.subheader("🚦 成功門檻明細")
+        for r in result.results:
+            with st.expander(f"{'✅' if r.passed else '❌'} {r.name}"):
+                if r.passed:
+                    st.write("通過全部門檻")
+                else:
+                    for f in r.failures:
+                        st.write(f"❌ {f}")
 
 # 底部信息
 st.sidebar.markdown("---")
