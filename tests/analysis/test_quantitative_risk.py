@@ -256,8 +256,8 @@ class TestQuantitativeRiskAnalyzer:
         # 創建測試數據
         test_data = pd.DataFrame({
             'pnl': [100, -50, 200, -30],
-            'close_time': pd.date_range('2024-01-01', periods=4, freq='H'),
-            'open_time': pd.date_range('2024-01-01', periods=4, freq='H') - pd.Timedelta(minutes=30)
+            'close_time': pd.date_range('2024-01-01', periods=4, freq='h'),
+            'open_time': pd.date_range('2024-01-01', periods=4, freq='h') - pd.Timedelta(minutes=30)
         })
         
         analyzer = QuantitativeRiskAnalyzer(trades_df=test_data)

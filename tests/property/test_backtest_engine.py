@@ -278,7 +278,7 @@ def test_single_strategy_backtest():
     """測試單策略回測"""
     # 創建簡單的市場數據
     data = pd.DataFrame({
-        'timestamp': pd.date_range('2024-01-01', periods=100, freq='1H'),
+        'timestamp': pd.date_range('2024-01-01', periods=100, freq='1h'),
         'open': [50000.0] * 100,
         'high': [51000.0] * 100,
         'low': [49000.0] * 100,
@@ -307,7 +307,7 @@ def test_multi_strategy_backtest():
     """測試多策略回測"""
     # 創建市場數據
     data = pd.DataFrame({
-        'timestamp': pd.date_range('2024-01-01', periods=100, freq='1H'),
+        'timestamp': pd.date_range('2024-01-01', periods=100, freq='1h'),
         'open': [50000.0] * 100,
         'high': [51000.0] * 100,
         'low': [49000.0] * 100,
@@ -406,7 +406,7 @@ def test_backtest_with_date_range():
     """測試指定日期範圍的回測"""
     # 創建市場數據
     data = pd.DataFrame({
-        'timestamp': pd.date_range('2024-01-01', periods=100, freq='1H'),
+        'timestamp': pd.date_range('2024-01-01', periods=100, freq='1h'),
         'open': [50000.0] * 100,
         'high': [51000.0] * 100,
         'low': [49000.0] * 100,

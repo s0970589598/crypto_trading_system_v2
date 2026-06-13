@@ -55,7 +55,7 @@ def market_data():
     base_price = 3000.0
     
     def generate_ohlcv(n, base):
-        dates = pd.date_range(end=datetime.now(), periods=n, freq='15T')
+        dates = pd.date_range(end=datetime.now(), periods=n, freq='15min')
         return pd.DataFrame({
             'timestamp': dates,
             'open': [base + np.random.randn() * 10 for _ in range(n)],
