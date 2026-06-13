@@ -157,6 +157,25 @@ class Strategy(ABC):
         """
         return None
 
+    def get_mfe_protection(
+        self, entry_price: float, direction: str, atr: float
+    ) -> Optional[dict]:
+        """MFE 利潤回吐保護設定
+
+        非抽象方法，預設回傳 None（停用）。需要的策略（如 scalping）覆寫，回傳
+        {'mfe_trigger_pct': X, 'mfe_protection_floor_pct': Y}：浮盈曾達 X% 但回落至
+        Y% 以下時強制平倉，避免利潤蒸發。
+
+        Args:
+            entry_price: 進場價格
+            direction: 'long' 或 'short'
+            atr: ATR 值
+
+        Returns:
+            Optional[dict]: {'mfe_trigger_pct': float, 'mfe_protection_floor_pct': float} 或 None
+        """
+        return None
+
     def get_name(self) -> str:
         """獲取策略名稱
 

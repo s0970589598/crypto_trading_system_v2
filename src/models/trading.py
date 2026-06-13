@@ -84,6 +84,10 @@ class Position:
     tp1: Optional[float] = None
     tp1_close_pct: float = 0.0
     tp1_taken: bool = False
+    # MFE 利潤回吐保護（B2）：持倉期間最有利價 + 觸發/底線門檻（%，mfe_trigger_pct=0 表停用）
+    max_favorable_price: Optional[float] = None
+    mfe_trigger_pct: float = 0.0
+    mfe_protection_floor_pct: float = 0.0
 
     def update_pnl(self, current_price: float) -> float:
         """更新未實現損益

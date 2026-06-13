@@ -135,6 +135,26 @@ class BacktestEngine:
             return low <= level
         return False
 
+    def _mfe_triggered(self, position, current_price: float) -> bool:
+        """MFE 利潤回吐保護是否觸發
+
+        浮盈曾達 mfe_trigger_pct%、但當前（收盤）回落至 mfe_protection_floor_pct%
+        以下 → 觸發平倉。mfe_trigger_pct <= 0 或未追蹤最有利價時停用。
+        """
+        if position.mfe_trigger_pct <= 0 or position.max_favorable_price is None:
+            return False
+        entry = position.entry_price
+        if entry <= 0:
+            return False
+        if position.direction == 'long':
+            mfe_pct = (position.max_favorable_price - entry) / entry * 100
+            current_pct = (current_price - entry) / entry * 100
+        else:
+            mfe_pct = (entry - position.max_favorable_price) / entry * 100
+            current_pct = (entry - current_price) / entry * 100
+        return (mfe_pct >= position.mfe_trigger_pct
+                and current_pct <= position.mfe_protection_floor_pct)
+
     def run_single_strategy(
         self,
         strategy: Strategy,
@@ -217,6 +237,15 @@ class BacktestEngine:
             #   先用當根高低點判斷「盤中」強平/止損/止盈（不利方向優先、保守），
             #   都沒觸發再檢查策略出場（以收盤價）。
             if current_position:
+                # 更新持倉期間最有利價（MFE 用：做多看高點、做空看低點）
+                if current_position.max_favorable_price is not None:
+                    if current_position.direction == 'long':
+                        current_position.max_favorable_price = max(
+                            current_position.max_favorable_price, current_high)
+                    else:
+                        current_position.max_favorable_price = min(
+                            current_position.max_favorable_price, current_low)
+
                 # 先解析「全平」候選（SL/強平/tp2）。不利方向（止損/強平）優先，
                 # 觸發時跳過分批 tp1（保守、不利先成交）。
                 price_exit = self._resolve_price_exit(
@@ -264,6 +293,10 @@ class BacktestEngine:
                     if price_exit is not None:
                         exit_base_price, exit_reason = price_exit
                         should_exit = True
+                    elif self._mfe_triggered(current_position, current_price):
+                        should_exit = True
+                        exit_reason = "MFE保護"
+                        exit_base_price = current_price
                     elif strategy.should_exit(current_position, market_data_obj):
                         should_exit = True
                         exit_reason = "策略出場"
@@ -307,6 +340,7 @@ class BacktestEngine:
                 stop_loss = strategy.calculate_stop_loss(entry_price, direction, atr)
                 take_profit = strategy.calculate_take_profit(entry_price, direction, atr)
                 partial = strategy.get_partial_take_profit(entry_price, direction, atr)
+                mfe = strategy.get_mfe_protection(entry_price, direction, atr)
 
                 current_position = Position(
                     strategy_id=strategy.get_id(),
@@ -320,6 +354,9 @@ class BacktestEngine:
                     leverage=strategy.config.risk_management.leverage,
                     tp1=partial['tp1'] if partial else None,
                     tp1_close_pct=partial.get('tp1_close_pct', 0.0) if partial else 0.0,
+                    max_favorable_price=entry_price,
+                    mfe_trigger_pct=mfe.get('mfe_trigger_pct', 0.0) if mfe else 0.0,
+                    mfe_protection_floor_pct=mfe.get('mfe_protection_floor_pct', 0.0) if mfe else 0.0,
                 )
                 logger.debug(f"開倉：{direction}，成交價：{entry_price:.2f}，大小：{position_size:.4f}")
             pending_entry = None
@@ -340,6 +377,7 @@ class BacktestEngine:
                         stop_loss = strategy.calculate_stop_loss(entry_price, direction, atr)
                         take_profit = strategy.calculate_take_profit(entry_price, direction, atr)
                         partial = strategy.get_partial_take_profit(entry_price, direction, atr)
+                        mfe = strategy.get_mfe_protection(entry_price, direction, atr)
                         current_position = Position(
                             strategy_id=strategy.get_id(),
                             symbol=strategy.config.symbol,
@@ -352,6 +390,9 @@ class BacktestEngine:
                             leverage=strategy.config.risk_management.leverage,
                             tp1=partial['tp1'] if partial else None,
                             tp1_close_pct=partial.get('tp1_close_pct', 0.0) if partial else 0.0,
+                            max_favorable_price=entry_price,
+                            mfe_trigger_pct=mfe.get('mfe_trigger_pct', 0.0) if mfe else 0.0,
+                            mfe_protection_floor_pct=mfe.get('mfe_protection_floor_pct', 0.0) if mfe else 0.0,
                         )
                         logger.debug(f"開倉(legacy close)：{direction}，價格：{entry_price:.2f}")
                     else:
