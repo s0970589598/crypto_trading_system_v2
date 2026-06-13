@@ -67,6 +67,61 @@ class BacktestEngine:
             return price * (1 + self.slippage)
         return price * (1 - self.slippage)
 
+    def _resolve_price_exit(self, position, high: float, low: float):
+        """以當根高低點判斷盤中是否觸發 強平 / 止損 / 止盈
+
+        保守原則：同一根 K 線內若不利方向（止損、強平）與有利方向（止盈）
+        都被觸及，假設不利方向先成交（避免樂觀偏差）。止損與強平同時觸及時，
+        以「價格先碰到的那個」為準（朝不利方向移動時先碰到較接近進場價的一邊）。
+
+        Args:
+            position: 當前持倉
+            high: 當根最高價
+            low: 當根最低價
+
+        Returns:
+            (成交基準價, 出場原因) 或 None（未觸發）
+        """
+        liq = position.liquidation_price()
+
+        # stop_loss / take_profit <= 0 視為「未設/停用」
+        has_sl = position.stop_loss > 0
+        has_tp = position.take_profit > 0
+
+        if position.direction == 'long':
+            # 下行不利：止損與強平，朝下移動時先碰到「較高」的那個
+            reached_sl = has_sl and low <= position.stop_loss
+            reached_liq = low <= liq
+            if reached_sl or reached_liq:
+                if reached_sl and reached_liq:
+                    if position.stop_loss >= liq:
+                        return position.stop_loss, "止損"
+                    return liq, "強平"
+                if reached_sl:
+                    return position.stop_loss, "止損"
+                return liq, "強平"
+            # 上行有利：止盈
+            if has_tp and high >= position.take_profit:
+                return position.take_profit, "獲利"
+
+        elif position.direction == 'short':
+            # 上行不利：止損與強平，朝上移動時先碰到「較低」的那個
+            reached_sl = has_sl and high >= position.stop_loss
+            reached_liq = high >= liq
+            if reached_sl or reached_liq:
+                if reached_sl and reached_liq:
+                    if position.stop_loss <= liq:
+                        return position.stop_loss, "止損"
+                    return liq, "強平"
+                if reached_sl:
+                    return position.stop_loss, "止損"
+                return liq, "強平"
+            # 下行有利：止盈
+            if has_tp and low <= position.take_profit:
+                return position.take_profit, "獲利"
+
+        return None
+
     def run_single_strategy(
         self,
         strategy: Strategy,
@@ -132,8 +187,10 @@ class BacktestEngine:
         for i in range(n):
             row = primary_data.iloc[i]
             current_time = row['timestamp']
-            current_price = row['close']  # 收盤價作為標記價（判斷出場、計算權益）
+            current_price = row['close']  # 收盤價作為標記價（判斷策略出場、計算權益）
             current_open = row.get('open', current_price)  # 無 open 欄位時退回 close
+            current_high = row.get('high', current_price)  # 盤中高點（判斷 TP/SL/強平）
+            current_low = row.get('low', current_price)    # 盤中低點
 
             # 構建 MarketData 對象
             market_data_obj = self._build_market_data(
@@ -143,23 +200,20 @@ class BacktestEngine:
                 i
             )
 
-            # === 1. 檢查既有持倉是否平倉（以當根收盤價判斷，成交價加滑點）===
+            # === 1. 檢查既有持倉是否平倉 ===
+            #   先用當根高低點判斷「盤中」強平/止損/止盈（不利方向優先、保守），
+            #   都沒觸發再檢查策略出場（以收盤價）。
             if current_position:
                 should_exit = False
                 exit_reason = ""
                 exit_base_price = current_price  # 策略出場用收盤價
 
-                # 檢查止損（成交在止損價）
-                if current_position.should_stop_loss(current_price):
+                price_exit = self._resolve_price_exit(
+                    current_position, current_high, current_low
+                )
+                if price_exit is not None:
+                    exit_base_price, exit_reason = price_exit
                     should_exit = True
-                    exit_reason = "止損"
-                    exit_base_price = current_position.stop_loss
-                # 檢查獲利（成交在目標價）
-                elif current_position.should_take_profit(current_price):
-                    should_exit = True
-                    exit_reason = "獲利"
-                    exit_base_price = current_position.take_profit
-                # 檢查策略出場條件（成交在收盤價）
                 elif strategy.should_exit(current_position, market_data_obj):
                     should_exit = True
                     exit_reason = "策略出場"

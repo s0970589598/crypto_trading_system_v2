@@ -144,7 +144,27 @@ class Position:
         elif self.direction == 'short':
             return current_price <= self.take_profit
         return False
-    
+
+    def liquidation_price(self) -> float:
+        """估算強平（爆倉）價
+
+        隔離保證金、忽略維持保證金率與手續費的一階近似：槓桿 L 下，
+        反向 1/L 的價格變動即虧光保證金。
+        - 做多：entry * (1 - 1/L)
+        - 做空：entry * (1 + 1/L)
+        L <= 1（無槓桿）時做多回傳 0、做空回傳 inf（實質永不強平）。
+
+        Returns:
+            float: 估算強平價
+        """
+        if self.leverage <= 1:
+            return 0.0 if self.direction == 'long' else float('inf')
+        if self.direction == 'long':
+            return self.entry_price * (1 - 1 / self.leverage)
+        elif self.direction == 'short':
+            return self.entry_price * (1 + 1 / self.leverage)
+        return 0.0
+
     def to_dict(self) -> Dict[str, Any]:
         """轉換為字典"""
         return {
