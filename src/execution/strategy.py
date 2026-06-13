@@ -29,7 +29,19 @@ class Strategy(ABC):
         self.timeframes = config.timeframes
         self.parameters = config.parameters
         self.risk_management = config.risk_management
-    
+
+    def prepare(self, market_data: dict) -> None:
+        """回測開始前的預處理 hook（預設 no-op）
+
+        引擎在遍歷迴圈前呼叫一次，傳入完整 market_data（週期 -> DataFrame）。
+        向量化策略（如 scalping）可在此一次算完整段訊號並快取，避免逐根 O(n²) 重算。
+        既有逐根策略無需覆寫。
+
+        Args:
+            market_data: 完整市場數據（週期 -> DataFrame）
+        """
+        pass
+
     @abstractmethod
     def generate_signal(self, market_data: MarketData) -> Signal:
         """生成交易信號

@@ -174,7 +174,10 @@ class BacktestEngine:
             BacktestResult: 回測結果
         """
         logger.info(f"開始回測策略：{strategy.get_name()}")
-        
+
+        # 預處理 hook（向量化策略可在此預算整段訊號並快取，避免逐根 O(n²)）
+        strategy.prepare(market_data)
+
         # 初始化
         capital = self.initial_capital
         trades: List[Trade] = []
