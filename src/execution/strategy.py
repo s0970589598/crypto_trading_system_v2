@@ -138,9 +138,28 @@ class Strategy(ABC):
         """
         pass
     
+    def get_partial_take_profit(
+        self, entry_price: float, direction: str, atr: float
+    ) -> Optional[dict]:
+        """計算分批止盈的第一目標（tp1）
+
+        非抽象方法，預設回傳 None（無分批，行為與單一 TP 相同）。需要分批止盈的
+        策略（如 scalping）覆寫此方法，回傳 {'tp1': 價格, 'tp1_close_pct': 0-1}。
+        最終目標 tp2 仍由 calculate_take_profit 提供。
+
+        Args:
+            entry_price: 進場價格
+            direction: 'long' 或 'short'
+            atr: ATR 值
+
+        Returns:
+            Optional[dict]: {'tp1': float, 'tp1_close_pct': float} 或 None（不分批）
+        """
+        return None
+
     def get_name(self) -> str:
         """獲取策略名稱
-        
+
         Returns:
             str: 策略名稱
         """

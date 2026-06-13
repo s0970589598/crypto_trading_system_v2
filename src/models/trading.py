@@ -76,10 +76,15 @@ class Position:
     entry_price: float  # 進場價格
     size: float  # 倉位大小（幣數）
     stop_loss: float  # 止損價格
-    take_profit: float  # 目標價格
+    take_profit: float  # 目標價格（分批時為最終目標 tp2）
     leverage: int  # 槓桿倍數
     unrealized_pnl: float = 0.0  # 未實現損益
-    
+    # 分批止盈（B1）：tp1 為第一目標價、tp1_close_pct 為觸及時平倉比例（0-1）；
+    # tp1 為 None 表示無分批（行為與單一 TP 完全相同）。tp1_taken 標記是否已分批過。
+    tp1: Optional[float] = None
+    tp1_close_pct: float = 0.0
+    tp1_taken: bool = False
+
     def update_pnl(self, current_price: float) -> float:
         """更新未實現損益
         

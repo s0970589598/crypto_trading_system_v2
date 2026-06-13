@@ -122,6 +122,19 @@ class BacktestEngine:
 
         return None
 
+    def _reached_favorable(self, position, level: float, high: float, low: float) -> bool:
+        """當根是否朝「有利方向」觸及某價位（做多看高點、做空看低點）
+
+        用於分批止盈 tp1 判斷。level 為 None / <=0 視為未設。
+        """
+        if level is None or level <= 0:
+            return False
+        if position.direction == 'long':
+            return high >= level
+        elif position.direction == 'short':
+            return low <= level
+        return False
+
     def run_single_strategy(
         self,
         strategy: Strategy,
@@ -204,46 +217,83 @@ class BacktestEngine:
             #   先用當根高低點判斷「盤中」強平/止損/止盈（不利方向優先、保守），
             #   都沒觸發再檢查策略出場（以收盤價）。
             if current_position:
-                should_exit = False
-                exit_reason = ""
-                exit_base_price = current_price  # 策略出場用收盤價
-
+                # 先解析「全平」候選（SL/強平/tp2）。不利方向（止損/強平）優先，
+                # 觸發時跳過分批 tp1（保守、不利先成交）。
                 price_exit = self._resolve_price_exit(
                     current_position, current_high, current_low
                 )
-                if price_exit is not None:
-                    exit_base_price, exit_reason = price_exit
-                    should_exit = True
-                elif strategy.should_exit(current_position, market_data_obj):
-                    should_exit = True
-                    exit_reason = "策略出場"
+                is_adverse = price_exit is not None and price_exit[1] in ("止損", "強平")
 
-                if should_exit:
-                    # 平倉成交價加滑點：平多=賣出(價下偏)、平空=買進(價上偏)
-                    is_buy_to_close = current_position.direction == 'short'
-                    exit_price = self._apply_slippage(exit_base_price, is_buy_to_close)
+                # === 1a. 分批止盈 tp1（非不利、未取過、本根觸及）→ 部分平倉 ===
+                if (not is_adverse and current_position.tp1 is not None
+                        and not current_position.tp1_taken
+                        and self._reached_favorable(
+                            current_position, current_position.tp1,
+                            current_high, current_low)):
+                    partial_size = current_position.tp1_close_pct * current_position.size
+                    if partial_size > 0:
+                        is_buy_to_close = current_position.direction == 'short'
+                        fill = self._apply_slippage(current_position.tp1, is_buy_to_close)
+                        ptrade = Trade(
+                            strategy_id=strategy.get_id(),
+                            symbol=current_position.symbol,
+                            direction=current_position.direction,
+                            entry_time=current_position.entry_time,
+                            exit_time=current_time,
+                            entry_price=current_position.entry_price,
+                            exit_price=fill,
+                            size=partial_size,
+                            leverage=current_position.leverage,
+                            exit_reason="止盈tp1",
+                        )
+                        ptrade.calculate_pnl(self.commission)
+                        capital += ptrade.pnl
+                        trades.append(ptrade)
+                        current_position.size -= partial_size
+                        current_position.tp1_taken = True
+                        logger.debug(f"分批止盈 tp1：平 {partial_size:.4f}，損益 {ptrade.pnl:.2f}")
+                        # tp1_close_pct≈1 等於全平 → 收掉部位
+                        if current_position.size <= 1e-12:
+                            current_position = None
 
-                    trade = Trade(
-                        strategy_id=strategy.get_id(),
-                        symbol=current_position.symbol,
-                        direction=current_position.direction,
-                        entry_time=current_position.entry_time,
-                        exit_time=current_time,
-                        entry_price=current_position.entry_price,
-                        exit_price=exit_price,
-                        size=current_position.size,
-                        leverage=current_position.leverage,
-                        exit_reason=exit_reason,
-                    )
-                    trade.calculate_pnl(self.commission)
+                # === 1b. 全平剩餘：SL/強平/tp2（price_exit）或策略出場 ===
+                if current_position is not None:
+                    should_exit = False
+                    exit_reason = ""
+                    exit_base_price = current_price  # 策略出場用收盤價
+                    if price_exit is not None:
+                        exit_base_price, exit_reason = price_exit
+                        should_exit = True
+                    elif strategy.should_exit(current_position, market_data_obj):
+                        should_exit = True
+                        exit_reason = "策略出場"
 
-                    # 更新資金
-                    capital += trade.pnl
+                    if should_exit:
+                        # 平倉成交價加滑點：平多=賣出(價下偏)、平空=買進(價上偏)
+                        is_buy_to_close = current_position.direction == 'short'
+                        exit_price = self._apply_slippage(exit_base_price, is_buy_to_close)
 
-                    trades.append(trade)
-                    current_position = None
+                        trade = Trade(
+                            strategy_id=strategy.get_id(),
+                            symbol=current_position.symbol,
+                            direction=current_position.direction,
+                            entry_time=current_position.entry_time,
+                            exit_time=current_time,
+                            entry_price=current_position.entry_price,
+                            exit_price=exit_price,
+                            size=current_position.size,
+                            leverage=current_position.leverage,
+                            exit_reason=exit_reason,
+                        )
+                        trade.calculate_pnl(self.commission)
 
-                    logger.debug(f"平倉：{exit_reason}，損益：{trade.pnl:.2f} USDT")
+                        # 更新資金
+                        capital += trade.pnl
+
+                        trades.append(trade)
+                        current_position = None
+
+                        logger.debug(f"平倉：{exit_reason}，損益：{trade.pnl:.2f} USDT")
 
             # === 2. 執行上一根掛單的進場（用本根開盤價成交，修同根 look-ahead）===
             if pending_entry and not current_position:
@@ -256,6 +306,7 @@ class BacktestEngine:
                 position_size = strategy.calculate_position_size(capital, entry_price)
                 stop_loss = strategy.calculate_stop_loss(entry_price, direction, atr)
                 take_profit = strategy.calculate_take_profit(entry_price, direction, atr)
+                partial = strategy.get_partial_take_profit(entry_price, direction, atr)
 
                 current_position = Position(
                     strategy_id=strategy.get_id(),
@@ -267,6 +318,8 @@ class BacktestEngine:
                     stop_loss=stop_loss,
                     take_profit=take_profit,
                     leverage=strategy.config.risk_management.leverage,
+                    tp1=partial['tp1'] if partial else None,
+                    tp1_close_pct=partial.get('tp1_close_pct', 0.0) if partial else 0.0,
                 )
                 logger.debug(f"開倉：{direction}，成交價：{entry_price:.2f}，大小：{position_size:.4f}")
             pending_entry = None
@@ -286,6 +339,7 @@ class BacktestEngine:
                         position_size = strategy.calculate_position_size(capital, entry_price)
                         stop_loss = strategy.calculate_stop_loss(entry_price, direction, atr)
                         take_profit = strategy.calculate_take_profit(entry_price, direction, atr)
+                        partial = strategy.get_partial_take_profit(entry_price, direction, atr)
                         current_position = Position(
                             strategy_id=strategy.get_id(),
                             symbol=strategy.config.symbol,
@@ -296,6 +350,8 @@ class BacktestEngine:
                             stop_loss=stop_loss,
                             take_profit=take_profit,
                             leverage=strategy.config.risk_management.leverage,
+                            tp1=partial['tp1'] if partial else None,
+                            tp1_close_pct=partial.get('tp1_close_pct', 0.0) if partial else 0.0,
                         )
                         logger.debug(f"開倉(legacy close)：{direction}，價格：{entry_price:.2f}")
                     else:
