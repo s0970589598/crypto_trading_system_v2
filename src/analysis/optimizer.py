@@ -51,6 +51,46 @@ class OptimizationResult:
         }
 
 
+@dataclass
+class WalkForwardResult:
+    """Walk-forward（前進式）驗證結果
+
+    每個窗格在 in-sample（訓練）上優化參數、在緊接其後的 out-of-sample（測試）
+    上評估。聚合各窗 OOS 表現以估計真實樣本外績效，並用 in-sample 與 out-of-sample
+    的落差偵測過擬合。
+    """
+    n_windows: int                              # 實際完成的窗格數
+    optimization_metric: str
+    window_results: List[Dict[str, Any]]        # 每窗：best_params/is_score/oos_score/oos_trades...
+    mean_is_score: float                        # 各窗 in-sample 最佳分數平均
+    mean_oos_score: float                       # 各窗 out-of-sample 分數平均（≈ 真實可期待表現）
+    oos_score_std: float
+    pct_windows_oos_positive: float             # OOS 分數 > 0 的窗格比例
+    overfit_gap: float                          # mean_is - mean_oos（越大越過擬合）
+    total_oos_trades: int
+
+    def is_robust(self, min_oos_score: float = 1.0, min_oos_trades: int = 100) -> bool:
+        """是否通過樣本外穩健門檻
+
+        預設門檻對應「成功定義」：OOS Sharpe ≥ 1、累計 OOS 交易 ≥ 100
+        （回撤、贏過 BTC 等其餘條件由上層 selector 另外把關）。
+        """
+        return self.mean_oos_score >= min_oos_score and self.total_oos_trades >= min_oos_trades
+
+    def to_dict(self) -> dict:
+        return {
+            'n_windows': self.n_windows,
+            'optimization_metric': self.optimization_metric,
+            'mean_is_score': self.mean_is_score,
+            'mean_oos_score': self.mean_oos_score,
+            'oos_score_std': self.oos_score_std,
+            'pct_windows_oos_positive': self.pct_windows_oos_positive,
+            'overfit_gap': self.overfit_gap,
+            'total_oos_trades': self.total_oos_trades,
+            'window_results': self.window_results,
+        }
+
+
 class Optimizer:
     """參數優化器
     
@@ -68,7 +108,9 @@ class Optimizer:
         initial_capital: float = 1000.0,
         commission: float = 0.0005,
         train_ratio: float = 0.7,
-        optimization_metric: str = 'sharpe_ratio'
+        optimization_metric: str = 'sharpe_ratio',
+        slippage: float = 0.0,
+        fill_timing: str = 'next_open'
     ):
         """初始化優化器
         
@@ -88,7 +130,10 @@ class Optimizer:
         self.commission = commission
         self.train_ratio = train_ratio
         self.optimization_metric = optimization_metric
-        
+        # 滑點與成交時點：穿進回測引擎，否則優化跑的是「不誠實」回測（無滑點）
+        self.slippage = slippage
+        self.fill_timing = fill_timing
+
         # 分割訓練集和驗證集
         self.train_data, self.validation_data = self._split_data()
         
@@ -112,9 +157,148 @@ class Optimizer:
             validation_data[timeframe] = df.iloc[split_idx:].copy()
             
             logger.debug(f"{timeframe}: 訓練集 {len(train_data[timeframe])} 條，驗證集 {len(validation_data[timeframe])} 條")
-        
+
         return train_data, validation_data
-    
+
+    def _make_walk_forward_windows(
+        self,
+        n_windows: int,
+        initial_train_ratio: float = 0.5,
+    ) -> List[Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]]:
+        """產生 anchored（擴張式）walk-forward 窗格
+
+        前 initial_train_ratio 比例固定為初始訓練；其餘平均切成 n_windows 段
+        out-of-sample 測試。窗 k 的訓練集為「開頭到第 k 段測試之前」（擴張式），
+        測試集為第 k 段。依索引比例對每個週期切分（與 _split_data 一致）。
+
+        Args:
+            n_windows: 前進窗格數
+            initial_train_ratio: 初始訓練比例（其餘平均分給各 OOS 窗）
+
+        Returns:
+            List[(train_data, test_data)]
+        """
+        if n_windows < 1:
+            raise ValueError("n_windows 必須 >= 1")
+        if not 0 < initial_train_ratio < 1:
+            raise ValueError("initial_train_ratio 必須介於 0 與 1 之間")
+
+        step = (1.0 - initial_train_ratio) / n_windows
+        windows = []
+        for k in range(n_windows):
+            train_end_ratio = initial_train_ratio + k * step
+            test_end_ratio = initial_train_ratio + (k + 1) * step
+            train_data = {}
+            test_data = {}
+            for tf, df in self.market_data.items():
+                n = len(df)
+                tr_end = int(n * train_end_ratio)
+                te_end = int(n * test_end_ratio)
+                train_data[tf] = df.iloc[:tr_end].copy()
+                test_data[tf] = df.iloc[tr_end:te_end].copy()
+            windows.append((train_data, test_data))
+        return windows
+
+    def walk_forward(
+        self,
+        param_grid: Dict[str, List[Any]],
+        n_windows: int = 4,
+        initial_train_ratio: float = 0.5,
+        max_combinations: Optional[int] = None,
+    ) -> WalkForwardResult:
+        """Walk-forward 前進式優化驗證
+
+        每個窗格：在 in-sample（訓練）以網格搜索選出最佳參數，再用該參數在
+        緊接其後、未參與優化的 out-of-sample（測試）評估。聚合各窗 OOS 表現
+        以估計真實樣本外績效並偵測過擬合（in-sample vs out-of-sample 落差）。
+
+        這是「自我優化找真 edge」的核心：優化目標應為 OOS 表現，而非把單一
+        歷史窗格背得最熟的 in-sample 報酬。
+
+        Args:
+            param_grid: 參數網格 {'name': [v1, v2, ...]}（支援巢狀如 'risk_management.leverage'）
+            n_windows: 前進窗格數
+            initial_train_ratio: 初始訓練比例（其餘平均分給各 OOS 窗）
+            max_combinations: 每窗最多測試的參數組合數（限制搜索空間）
+
+        Returns:
+            WalkForwardResult
+        """
+        logger.info(f"開始 walk-forward 驗證：{n_windows} 窗、初始訓練比例 {initial_train_ratio}")
+
+        # 產生參數組合
+        param_names = list(param_grid.keys())
+        param_values = [param_grid[name] for name in param_names]
+        combinations = list(itertools.product(*param_values))
+        if max_combinations and len(combinations) > max_combinations:
+            combinations = random.sample(combinations, max_combinations)
+
+        windows = self._make_walk_forward_windows(n_windows, initial_train_ratio)
+        window_results: List[Dict[str, Any]] = []
+
+        for w_idx, (train_data, test_data) in enumerate(windows):
+            # 1) in-sample 優化：選訓練集分數最高的參數
+            best_is_score = float('-inf')
+            best_params = None
+            best_is_result = None
+            for combination in combinations:
+                params = dict(zip(param_names, combination))
+                try:
+                    is_score, is_result = self._evaluate_params(params, train_data)
+                except Exception as e:
+                    logger.error(f"窗 {w_idx} in-sample 評估失敗：{params}，{e}")
+                    continue
+                if is_score > best_is_score:
+                    best_is_score = is_score
+                    best_params = params
+                    best_is_result = is_result
+
+            if best_params is None:
+                logger.warning(f"窗 {w_idx} 無有效參數，略過")
+                continue
+
+            # 2) out-of-sample 評估：用 in-sample 最佳參數在未看過的測試集上跑
+            try:
+                oos_score, oos_result = self._evaluate_params(best_params, test_data)
+            except Exception as e:
+                logger.error(f"窗 {w_idx} out-of-sample 評估失敗：{e}")
+                continue
+
+            window_results.append({
+                'window': w_idx,
+                'best_params': best_params,
+                'is_score': best_is_score,
+                'oos_score': oos_score,
+                'is_trades': best_is_result.total_trades,
+                'oos_trades': oos_result.total_trades,
+                'oos_pnl_pct': oos_result.total_pnl_pct,
+                'oos_max_drawdown_pct': oos_result.max_drawdown_pct,
+            })
+
+        # 3) 聚合
+        oos_scores = [w['oos_score'] for w in window_results]
+        is_scores = [w['is_score'] for w in window_results]
+        mean_oos = float(np.mean(oos_scores)) if oos_scores else 0.0
+        mean_is = float(np.mean(is_scores)) if is_scores else 0.0
+        oos_std = float(np.std(oos_scores)) if oos_scores else 0.0
+        pct_pos = (sum(1 for s in oos_scores if s > 0) / len(oos_scores)) if oos_scores else 0.0
+        total_oos_trades = sum(w['oos_trades'] for w in window_results)
+
+        logger.info(f"walk-forward 完成：平均 OOS {mean_oos:.4f}、IS {mean_is:.4f}、"
+                    f"過擬合落差 {mean_is - mean_oos:.4f}")
+
+        return WalkForwardResult(
+            n_windows=len(window_results),
+            optimization_metric=self.optimization_metric,
+            window_results=window_results,
+            mean_is_score=mean_is,
+            mean_oos_score=mean_oos,
+            oos_score_std=oos_std,
+            pct_windows_oos_positive=pct_pos,
+            overfit_gap=mean_is - mean_oos,
+            total_oos_trades=total_oos_trades,
+        )
+
     def _evaluate_params(
         self,
         params: Dict[str, Any],
@@ -151,8 +335,9 @@ class Optimizer:
         strategy_config = StrategyConfig.from_dict(config)
         strategy = self.strategy_class(strategy_config)
         
-        # 回測
-        engine = BacktestEngine(self.initial_capital, self.commission)
+        # 回測（帶滑點與成交時點，與單次回測一致的誠實度）
+        engine = BacktestEngine(self.initial_capital, self.commission,
+                                self.slippage, self.fill_timing)
         result = engine.run_single_strategy(strategy, data)
         
         # 獲取評分
