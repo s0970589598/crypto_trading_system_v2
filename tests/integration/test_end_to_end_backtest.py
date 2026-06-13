@@ -56,7 +56,7 @@ class TestEndToEndBacktest:
             global_max_position=0.80,
             strategy_max_position=0.30
         )
-        return RiskManager(config)
+        return RiskManager(config, initial_capital=1000.0)
     
     @pytest.fixture
     def backtest_engine(self):
@@ -116,8 +116,8 @@ class TestEndToEndBacktest:
         # 驗證回測結果
         assert result is not None, "回測應該返回結果"
         assert result.strategy_id == strategy_id, "策略ID應該匹配"
-        assert result.start_date == start_date, "開始日期應該匹配"
-        assert result.end_date == end_date, "結束日期應該匹配"
+        assert result.start_date >= start_date, "開始日期應該 >= 請求起點（引擎會對齊到實際可用 K 棒/多週期起點）"
+        assert result.end_date <= end_date, "結束日期應該 <= 請求終點（主週期最後一根可能早於最細週期）"
         assert result.initial_capital == 1000.0, "初始資金應該匹配"
         assert result.final_capital > 0, "最終資金應該大於0"
         
@@ -250,13 +250,13 @@ class TestEndToEndBacktest:
         first_tf = list(symbol_data.keys())[0]
         df = symbol_data[first_tf]
         
-        end_date = df.index[-1]
+        end_date = df['timestamp'].iloc[-1]
         start_date = end_date - timedelta(days=30)
-        
+
         # 執行回測（包含風險管理）
         result = backtest_engine.run_single_strategy(
             strategy=strategy,
-            market_data={config.symbol: symbol_data},
+            market_data=symbol_data,
             start_date=start_date,
             end_date=end_date
         )
@@ -270,15 +270,17 @@ class TestEndToEndBacktest:
             should_halt, reason = risk_manager.should_halt_trading()
             # 在回測中，我們只是記錄，不實際暫停
         
-        # 驗證風險狀態已更新
+        # 驗證風險狀態已更新（GlobalRiskState 實際欄位：current_capital / risk_events 等，
+        # 無 total_trades / current_drawdown）
         global_state = risk_manager.global_state
-        assert global_state.total_trades >= 0, "總交易次數應該被追蹤"
-        
+        assert isinstance(global_state.risk_events, list), "風險事件應可查詢"
+        assert global_state.current_capital is not None, "風險狀態的當前資金應該被追蹤"
+
         print(f"\n完整組件回測完成:")
         print(f"  策略: {strategy_id}")
         print(f"  總交易: {result.total_trades}")
-        print(f"  風險管理器追蹤的交易: {global_state.total_trades}")
-        print(f"  當前回撤: {global_state.current_drawdown:.2%}")
+        print(f"  風險管理器當前資金: {global_state.current_capital:.2f}")
+        print(f"  今日損益: {global_state.daily_pnl:.2f}")
     
     def test_backtest_result_persistence(self, strategy_manager, backtest_engine, market_data, tmp_path):
         """測試回測結果的持久化和載入"""
@@ -300,12 +302,12 @@ class TestEndToEndBacktest:
         first_tf = list(symbol_data.keys())[0]
         df = symbol_data[first_tf]
         
-        end_date = df.index[-1]
+        end_date = df['timestamp'].iloc[-1]
         start_date = end_date - timedelta(days=30)
-        
+
         result = backtest_engine.run_single_strategy(
             strategy=strategy,
-            market_data={config.symbol: symbol_data},
+            market_data=symbol_data,
             start_date=start_date,
             end_date=end_date
         )

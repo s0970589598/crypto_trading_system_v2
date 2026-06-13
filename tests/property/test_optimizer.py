@@ -5,7 +5,7 @@ Optimizer 屬性測試
 """
 
 import pytest
-from hypothesis import given, strategies as st, settings, assume
+from hypothesis import given, strategies as st, settings, assume, HealthCheck
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -13,44 +13,44 @@ from typing import Dict, List, Any
 
 from src.analysis.optimizer import Optimizer, OptimizationResult
 from src.strategies.multi_timeframe_strategy import MultiTimeframeStrategy
+from src.strategies.breakout_strategy import BreakoutStrategy
 from src.models.config import StrategyConfig
 
 
 # 測試數據生成器
 @st.composite
 def market_data_strategy(draw):
-    """生成市場數據"""
-    n_candles = draw(st.integers(min_value=200, max_value=500))
+    """生成市場數據（僅 test_data_separation 用）
+
+    保留隨機漫步的價格變化（產生器名副其實、未來可復用），但用「單次 list 抽樣」
+    取代原本「每根 K 棒多次 draw()」，避免 hypothesis entropy 爆表
+    （原本每根 5 次抽樣 × 數百根 → data_too_large 無法生成輸入）。
+    本測試只驗時間戳切分、不看價格，故價格僅需有界且合法即可。
+    """
+    n_candles = draw(st.integers(min_value=30, max_value=60))
     base_price = draw(st.floats(min_value=1000, max_value=50000))
-    
+    # 一次抽出 n_candles 個報酬率，再構造隨機漫步（單次 list 抽樣，entropy 可控）
+    changes = draw(st.lists(
+        st.floats(min_value=-0.03, max_value=0.03),
+        min_size=n_candles, max_size=n_candles,
+    ))
+
     timestamps = [datetime.now() - timedelta(hours=i) for i in range(n_candles, 0, -1)]
-    
+    opens, highs, lows, closes = [], [], [], []
+    price = base_price
+    for ch in changes:
+        o = price
+        c = price * (1 + ch)
+        opens.append(o)
+        highs.append(max(o, c) * 1.005)
+        lows.append(min(o, c) * 0.995)
+        closes.append(c)
+        price = c
     data = {
         'timestamp': timestamps,
-        'open': [],
-        'high': [],
-        'low': [],
-        'close': [],
-        'volume': [],
+        'open': opens, 'high': highs, 'low': lows, 'close': closes,
+        'volume': [1000.0] * n_candles,
     }
-    
-    current_price = base_price
-    for _ in range(n_candles):
-        change = draw(st.floats(min_value=-0.05, max_value=0.05))
-        current_price = current_price * (1 + change)
-        
-        open_price = current_price
-        high_price = open_price * (1 + abs(draw(st.floats(min_value=0, max_value=0.02))))
-        low_price = open_price * (1 - abs(draw(st.floats(min_value=0, max_value=0.02))))
-        close_price = draw(st.floats(min_value=low_price, max_value=high_price))
-        volume = draw(st.floats(min_value=100, max_value=10000))
-        
-        data['open'].append(open_price)
-        data['high'].append(high_price)
-        data['low'].append(low_price)
-        data['close'].append(close_price)
-        data['volume'].append(volume)
-    
     df = pd.DataFrame(data)
     return {'1h': df}
 
@@ -64,9 +64,11 @@ def param_grid_strategy(draw):
     param_grid = {}
     for i in range(n_params):
         param_name = f"param_{i}"
-        # 每個參數 2-4 個值
-        n_values = draw(st.integers(min_value=2, max_value=4))
-        values = [draw(st.floats(min_value=0.1, max_value=10.0)) for _ in range(n_values)]
+        # 每個參數 2-4 個「不重複」的值（避免產生重複的網格組合，唯一性斷言才成立）
+        values = draw(st.lists(
+            st.floats(min_value=0.1, max_value=10.0),
+            min_size=2, max_size=4, unique=True,
+        ))
         param_grid[param_name] = values
     
     return param_grid
@@ -74,7 +76,8 @@ def param_grid_strategy(draw):
 
 # Feature: multi-strategy-system, Property 12: 參數優化數據分離
 @given(market_data_strategy())
-@settings(max_examples=100, deadline=None)
+@settings(max_examples=100, deadline=None,
+          suppress_health_check=[HealthCheck.data_too_large])
 def test_data_separation(market_data):
     """
     對於任何參數優化過程，訓練集和驗證集不應該有重疊的數據點。
@@ -192,12 +195,12 @@ def test_grid_search_completeness(param_grid):
     
     # 創建優化器
     optimizer = Optimizer(
-        strategy_class=MultiTimeframeStrategy,
+        strategy_class=BreakoutStrategy,  # 單週期策略，可在單一 '1h' 測試資料上跑
         base_config=base_config,
         market_data=market_data,
         train_ratio=0.7,
     )
-    
+
     # 執行網格搜索
     result = optimizer.grid_search(param_grid)
     
