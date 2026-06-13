@@ -28,16 +28,45 @@ class BacktestEngine:
     - 資金曲線追蹤
     """
     
-    def __init__(self, initial_capital: float, commission: float = 0.0005):
+    def __init__(
+        self,
+        initial_capital: float,
+        commission: float = 0.0005,
+        slippage: float = 0.0,
+        fill_timing: str = 'next_open',
+    ):
         """初始化回測引擎
-        
+
         Args:
             initial_capital: 初始資金
             commission: 手續費率（默認 0.05%）
+            slippage: 滑點率（單邊，預設 0）。每次成交價朝不利方向偏移此比例，
+                例如 0.0005 表示買進貴 0.05%、賣出便宜 0.05%。對高槓桿短線必設，
+                否則回測獲利系統性高估。
+            fill_timing: 成交時點。
+                'next_open'（預設、正確）= 訊號在第 i 根產生、第 i+1 根開盤價成交，
+                避免「看到收盤價又用收盤價成交」的同根 look-ahead；
+                'close'（legacy）= 當根收盤價立即成交（舊行為，僅供前後對比）。
         """
         self.initial_capital = initial_capital
         self.commission = commission
-    
+        self.slippage = slippage
+        self.fill_timing = fill_timing
+
+    def _apply_slippage(self, price: float, is_buy: bool) -> float:
+        """對成交價套用滑點（永遠朝不利方向偏移）
+
+        Args:
+            price: 基準成交價
+            is_buy: 是否為買方成交（開多 / 平空）。買方價格上偏、賣方價格下偏。
+
+        Returns:
+            float: 加上滑點後的成交價
+        """
+        if is_buy:
+            return price * (1 + self.slippage)
+        return price * (1 - self.slippage)
+
     def run_single_strategy(
         self,
         strategy: Strategy,
@@ -92,39 +121,54 @@ class BacktestEngine:
             primary_data = primary_data[primary_data['timestamp'] >= earliest_start]
             logger.info(f"調整起始時間為 {earliest_start}，確保所有週期都有數據")
         
+        # 重置索引，以便用位置存取「下一根」K 線（next-open 成交用）
+        primary_data = primary_data.reset_index(drop=True)
+        n = len(primary_data)
+
+        # 待成交的進場單：第 i 根決策、第 i+1 根開盤價成交（修同根 look-ahead）
+        pending_entry: Optional[Dict] = None
+
         # 遍歷每個時間點
-        for idx, row in primary_data.iterrows():
+        for i in range(n):
+            row = primary_data.iloc[i]
             current_time = row['timestamp']
-            current_price = row['close']
-            
+            current_price = row['close']  # 收盤價作為標記價（判斷出場、計算權益）
+            current_open = row.get('open', current_price)  # 無 open 欄位時退回 close
+
             # 構建 MarketData 對象
             market_data_obj = self._build_market_data(
                 strategy.config.symbol,
                 current_time,
                 market_data,
-                idx
+                i
             )
-            
-            # 檢查是否需要平倉
+
+            # === 1. 檢查既有持倉是否平倉（以當根收盤價判斷，成交價加滑點）===
             if current_position:
                 should_exit = False
                 exit_reason = ""
-                
-                # 檢查止損
+                exit_base_price = current_price  # 策略出場用收盤價
+
+                # 檢查止損（成交在止損價）
                 if current_position.should_stop_loss(current_price):
                     should_exit = True
                     exit_reason = "止損"
-                # 檢查獲利
+                    exit_base_price = current_position.stop_loss
+                # 檢查獲利（成交在目標價）
                 elif current_position.should_take_profit(current_price):
                     should_exit = True
                     exit_reason = "獲利"
-                # 檢查策略出場條件
+                    exit_base_price = current_position.take_profit
+                # 檢查策略出場條件（成交在收盤價）
                 elif strategy.should_exit(current_position, market_data_obj):
                     should_exit = True
                     exit_reason = "策略出場"
-                
+
                 if should_exit:
-                    # 平倉
+                    # 平倉成交價加滑點：平多=賣出(價下偏)、平空=買進(價上偏)
+                    is_buy_to_close = current_position.direction == 'short'
+                    exit_price = self._apply_slippage(exit_base_price, is_buy_to_close)
+
                     trade = Trade(
                         strategy_id=strategy.get_id(),
                         symbol=current_position.symbol,
@@ -132,66 +176,96 @@ class BacktestEngine:
                         entry_time=current_position.entry_time,
                         exit_time=current_time,
                         entry_price=current_position.entry_price,
-                        exit_price=current_price,
+                        exit_price=exit_price,
                         size=current_position.size,
                         leverage=current_position.leverage,
                         exit_reason=exit_reason,
                     )
                     trade.calculate_pnl(self.commission)
-                    
+
                     # 更新資金
                     capital += trade.pnl
-                    
+
                     trades.append(trade)
                     current_position = None
-                    
+
                     logger.debug(f"平倉：{exit_reason}，損益：{trade.pnl:.2f} USDT")
-            
-            # 如果沒有持倉，檢查是否有進場信號
+
+            # === 2. 執行上一根掛單的進場（用本根開盤價成交，修同根 look-ahead）===
+            if pending_entry and not current_position:
+                direction = pending_entry['direction']
+                atr = pending_entry['atr']
+                # 進場成交價加滑點：開多=買進(價上偏)、開空=賣出(價下偏)
+                is_buy = direction == 'long'
+                entry_price = self._apply_slippage(current_open, is_buy)
+
+                position_size = strategy.calculate_position_size(capital, entry_price)
+                stop_loss = strategy.calculate_stop_loss(entry_price, direction, atr)
+                take_profit = strategy.calculate_take_profit(entry_price, direction, atr)
+
+                current_position = Position(
+                    strategy_id=strategy.get_id(),
+                    symbol=strategy.config.symbol,
+                    direction=direction,
+                    entry_time=current_time,
+                    entry_price=entry_price,
+                    size=position_size,
+                    stop_loss=stop_loss,
+                    take_profit=take_profit,
+                    leverage=strategy.config.risk_management.leverage,
+                )
+                logger.debug(f"開倉：{direction}，成交價：{entry_price:.2f}，大小：{position_size:.4f}")
+            pending_entry = None
+
+            # === 3. 產生進場信號（本根決策，預設下一根開盤成交）===
             if not current_position:
                 signal = strategy.generate_signal(market_data_obj)
-                
+
                 if signal.action in ['BUY', 'SELL']:
-                    # 計算倉位大小
-                    position_size = strategy.calculate_position_size(capital, current_price)
-                    
-                    # 計算止損和目標
-                    atr = market_data_obj.timeframes[primary_timeframe].indicators.get('atr', pd.Series([100.0])).iloc[-1]
                     direction = 'long' if signal.action == 'BUY' else 'short'
-                    stop_loss = strategy.calculate_stop_loss(current_price, direction, atr)
-                    take_profit = strategy.calculate_take_profit(current_price, direction, atr)
-                    
-                    # 開倉
-                    current_position = Position(
-                        strategy_id=strategy.get_id(),
-                        symbol=strategy.config.symbol,
-                        direction=direction,
-                        entry_time=current_time,
-                        entry_price=current_price,
-                        size=position_size,
-                        stop_loss=stop_loss,
-                        take_profit=take_profit,
-                        leverage=strategy.config.risk_management.leverage,
-                    )
-                    
-                    logger.debug(f"開倉：{direction}，價格：{current_price:.2f}，大小：{position_size:.4f}")
-            
-            # 記錄資金曲線
+                    atr = market_data_obj.timeframes[primary_timeframe].indicators.get('atr', pd.Series([100.0])).iloc[-1]
+
+                    if self.fill_timing == 'close':
+                        # legacy：當根收盤價立即成交（保留舊行為供前後對比）
+                        is_buy = direction == 'long'
+                        entry_price = self._apply_slippage(current_price, is_buy)
+                        position_size = strategy.calculate_position_size(capital, entry_price)
+                        stop_loss = strategy.calculate_stop_loss(entry_price, direction, atr)
+                        take_profit = strategy.calculate_take_profit(entry_price, direction, atr)
+                        current_position = Position(
+                            strategy_id=strategy.get_id(),
+                            symbol=strategy.config.symbol,
+                            direction=direction,
+                            entry_time=current_time,
+                            entry_price=entry_price,
+                            size=position_size,
+                            stop_loss=stop_loss,
+                            take_profit=take_profit,
+                            leverage=strategy.config.risk_management.leverage,
+                        )
+                        logger.debug(f"開倉(legacy close)：{direction}，價格：{entry_price:.2f}")
+                    else:
+                        # next_open（預設）：掛單，下一根開盤成交。最後一根無下一根 → 放棄此訊號
+                        pending_entry = {'direction': direction, 'atr': atr}
+
+            # === 4. 記錄資金曲線（用當根收盤價標記）===
             equity = capital
             if current_position:
                 current_position.update_pnl(current_price)
                 equity += current_position.unrealized_pnl
-            
+
             equity_curve.append({
                 'timestamp': current_time,
                 'equity': equity,
             })
         
-        # 如果還有持倉，強制平倉
+        # 如果還有持倉，強制平倉（成交價加滑點）
         if current_position:
             last_price = primary_data.iloc[-1]['close']
             last_time = primary_data.iloc[-1]['timestamp']
-            
+            is_buy_to_close = current_position.direction == 'short'
+            last_price = self._apply_slippage(last_price, is_buy_to_close)
+
             trade = Trade(
                 strategy_id=strategy.get_id(),
                 symbol=current_position.symbol,
@@ -350,8 +424,8 @@ class BacktestEngine:
             allocation = capital_allocation.get(strategy_id, 1.0 / len(strategies))
             strategy_capital = self.initial_capital * allocation
             
-            # 創建獨立的回測引擎
-            engine = BacktestEngine(strategy_capital, self.commission)
+            # 創建獨立的回測引擎（沿用滑點與成交時點設定）
+            engine = BacktestEngine(strategy_capital, self.commission, self.slippage, self.fill_timing)
             
             # 回測該策略
             result = engine.run_single_strategy(
