@@ -104,8 +104,13 @@ class ScalpingAdapter(Strategy):
         )
 
     def _exit_levels(self, entry_price: float, direction: str) -> dict:
-        return self._vec.get_exit_levels(
-            entry_price, direction, self._cur_atr, self._cur_regime)
+        # 不同 scalping 版本 get_exit_levels 簽章有別：v10/v11 吃 regime、v8~v9 不吃。
+        # 先試帶 regime，簽章不合(TypeError)再退回不帶。
+        try:
+            return self._vec.get_exit_levels(
+                entry_price, direction, self._cur_atr, self._cur_regime)
+        except TypeError:
+            return self._vec.get_exit_levels(entry_price, direction, self._cur_atr)
 
     def calculate_position_size(self, capital: float, price: float) -> float:
         # 波動縮放（position_scale）；權益縮放延後（固定 1.0）
