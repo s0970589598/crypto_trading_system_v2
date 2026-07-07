@@ -550,7 +550,10 @@ class BacktestEngine:
         
         for timeframe, df in market_data.items():
             # 獲取到當前時間為止的所有數據
-            historical_data = df[df['timestamp'] <= timestamp].copy()
+            # ponytail: 只留最近 HISTORY_WINDOW 根，避免每根複製全部歷史（O(n²)→O(n·W)）。
+            # W=300 ≥ 所有策略最長 lookback(v11 regime_lookback 60、EMA/BB<50)，故結果不變。
+            HISTORY_WINDOW = 300
+            historical_data = df[df['timestamp'] <= timestamp].iloc[-HISTORY_WINDOW:].copy()
             
             # 如果沒有數據，說明當前時間早於該週期的第一個數據點
             if len(historical_data) == 0:
