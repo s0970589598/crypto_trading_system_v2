@@ -350,6 +350,7 @@ class BacktestEngine:
                         capital += trade.pnl
 
                         trades.append(trade)
+                        strategy.on_trade_closed(trade, i)  # 完全平倉回饋（gating 用）
                         current_position = None
 
                         logger.debug(f"平倉：{exit_reason}，損益：{trade.pnl:.2f} USDT")
@@ -395,7 +396,7 @@ class BacktestEngine:
             if not current_position:
                 signal = strategy.generate_signal(market_data_obj)
 
-                if signal.action in ['BUY', 'SELL']:
+                if signal.action in ['BUY', 'SELL'] and strategy.can_enter(i):
                     direction = 'long' if signal.action == 'BUY' else 'short'
                     atr = market_data_obj.timeframes[primary_timeframe].indicators.get('atr', pd.Series([100.0])).iloc[-1]
 
@@ -466,7 +467,8 @@ class BacktestEngine:
             trade.calculate_pnl(self.commission)
             capital += trade.pnl
             trades.append(trade)
-        
+            strategy.on_trade_closed(trade, n - 1)  # 結束平倉回饋
+
         # 創建回測結果
         result = BacktestResult(
             strategy_id=strategy.get_id(),

@@ -160,3 +160,13 @@ class ScalpingV11(ScalpingAdapter):
         from src.strategies.scalping_high_leverage_v11 import ScalpingHighLeverageV11
         v11 = ScalpingHighLeverageV11(**(config.parameters or {}))
         super().__init__(config, v11)
+
+    def on_trade_closed(self, trade, bar_index: int) -> None:
+        guardian = getattr(self._vec, 'equity_guardian', None)
+        if guardian is not None:
+            guardian.record_trade(trade.pnl, bar_index)
+
+    def can_enter(self, bar_index: int) -> bool:
+        # 權益守護者連虧/連勝冷卻 gating（equity_scale 部位縮放未建模，維持 v11 預設 1.0）
+        guardian = getattr(self._vec, 'equity_guardian', None)
+        return guardian.can_trade(bar_index) if guardian is not None else True

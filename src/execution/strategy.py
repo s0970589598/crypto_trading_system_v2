@@ -198,6 +198,21 @@ class Strategy(ABC):
         """
         return None
 
+    def on_trade_closed(self, trade, bar_index: int) -> None:
+        """一筆部位「完全平倉」後的回饋 hook（預設 no-op）
+
+        供有跨交易狀態的策略（如 scalping 權益守護者）記錄勝負以決定冷卻/gating。
+        分批 tp1 不算獨立一筆（只在部位完全平倉時呼叫）。
+        """
+        pass
+
+    def can_enter(self, bar_index: int) -> bool:
+        """是否允許在此根開新倉（預設 True）
+
+        有 gating 的策略（連虧冷卻等）覆寫回傳 False 以跳過進場。
+        """
+        return True
+
     def get_name(self) -> str:
         """獲取策略名稱
 
