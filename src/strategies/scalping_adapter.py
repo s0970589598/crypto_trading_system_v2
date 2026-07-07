@@ -137,3 +137,16 @@ class ScalpingAdapter(Strategy):
     def should_exit(self, position, market_data: MarketData) -> bool:
         # scalping 出場由 SL/tp1/tp2/MFE 處理，無額外收盤出場
         return False
+
+
+class ScalpingV11(ScalpingAdapter):
+    """真實 v11 的 from-config 版：可直接當 strategy_class 給 Optimizer/StrategyManager。
+
+    config.parameters 覆寫 v11 預設（全部參數皆有預設，空 dict = 全預設）。
+    v11 import 放在 __init__ 內，故本模組在無 pandas_ta 的環境仍可 import，
+    只有實例化 ScalpingV11 時才需要 pandas_ta（需 Python <=3.13）。
+    """
+    def __init__(self, config: StrategyConfig):
+        from src.strategies.scalping_high_leverage_v11 import ScalpingHighLeverageV11
+        v11 = ScalpingHighLeverageV11(**(config.parameters or {}))
+        super().__init__(config, v11)
