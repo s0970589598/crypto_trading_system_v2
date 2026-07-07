@@ -1207,6 +1207,10 @@ elif category == "🔁 閉環驗證":
         with c3:
             train_ratio = st.slider("初始訓練比例", 0.3, 0.8, 0.5, 0.05)
 
+        recent_bars = int(st.number_input(
+            "資料區間（最近 N 根 K 線，0=全部；小一點跑得快，引擎逐根重建歷史為 O(n²)）",
+            0, 100000, 1500, 100))
+
         st.write("**參數網格**（值用逗號分隔；留空=只驗 base config 不優化）")
         g1, g2 = st.columns(2)
         with g1:
@@ -1235,6 +1239,8 @@ elif category == "🔁 閉環驗證":
                 if Path(path).exists():
                     df = pd.read_csv(path)
                     df['timestamp'] = pd.to_datetime(df['timestamp'])
+                    if recent_bars > 0:
+                        df = df.tail(recent_bars).reset_index(drop=True)
                     market_data[tf] = df
                 else:
                     missing.append(tf)
