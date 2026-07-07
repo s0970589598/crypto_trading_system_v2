@@ -188,6 +188,16 @@ class Strategy(ABC):
         """
         return None
 
+    def get_time_stop(
+        self, entry_price: float, direction: str, atr: float
+    ) -> Optional[dict]:
+        """時間停損設定（非抽象、預設 None=停用）
+
+        持倉根數落在 [start, end] 且仍在成本區 ±cost_zone_pct% 內時強制平倉，
+        避免資金卡在不動的部位。覆寫回傳 {'start': int, 'end': int, 'cost_zone_pct': float}。
+        """
+        return None
+
     def get_name(self) -> str:
         """獲取策略名稱
 

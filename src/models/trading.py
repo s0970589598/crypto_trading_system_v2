@@ -88,6 +88,11 @@ class Position:
     max_favorable_price: Optional[float] = None
     mfe_trigger_pct: float = 0.0
     mfe_protection_floor_pct: float = 0.0
+    # 時間停損（item4）：持倉根數 + 觸發窗 [start,end] + 成本區%；time_stop_end=0 表停用
+    bars_held: int = 0
+    time_stop_start: int = 0
+    time_stop_end: int = 0
+    cost_zone_pct: float = 0.0
 
     def update_pnl(self, current_price: float) -> float:
         """更新未實現損益
