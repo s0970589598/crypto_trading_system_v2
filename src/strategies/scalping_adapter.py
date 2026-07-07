@@ -154,6 +154,65 @@ class ScalpingAdapter(Strategy):
         return False
 
 
+class DataFrameSignalAdapter(Strategy):
+    """把「訊號與出場寫在 generate_signals 產出 df 欄位」的向量化策略接進閉環。
+
+    適用沒有 get_exit_levels、但 df 有 long_signal/short_signal +
+    long_stop_loss/long_take_profit（short_ 同）的策略（adx/harmonic/demigod/multi_factor）。
+    只在 SL/TP 皆有限值的訊號才進場（缺值視為該策略未給出場、不交易）。
+    """
+    def __init__(self, config: StrategyConfig, vectorized_strategy: Any,
+                 timeframe: Optional[str] = None, base_position_pct: Optional[float] = None):
+        super().__init__(config)
+        self._vec = vectorized_strategy
+        self._timeframe = timeframe or (config.timeframes[0] if config.timeframes else None)
+        self._base_pct = (base_position_pct if base_position_pct is not None
+                          else config.risk_management.position_size)
+        self._signals = {}   # ts -> (direction, sl, tp)
+        self._cur = None     # 當前訊號的 (sl, tp)
+
+    def prepare(self, market_data: dict) -> None:
+        if self._timeframe is None or self._timeframe not in market_data:
+            return
+        df = market_data[self._timeframe].copy()
+        if 'timestamp' in df.columns:
+            df = df.set_index('timestamp', drop=False)
+        out = self._vec.generate_signals(df)
+        has_ts = 'timestamp' in out.columns
+        for idx, row in out.iterrows():
+            key = row['timestamp'] if has_ts else idx
+            if bool(row.get('long_signal', False)):
+                sl, tp = row.get('long_stop_loss'), row.get('long_take_profit')
+                if pd.notna(sl) and pd.notna(tp):
+                    self._signals[key] = ('long', float(sl), float(tp))
+            elif bool(row.get('short_signal', False)):
+                sl, tp = row.get('short_stop_loss'), row.get('short_take_profit')
+                if pd.notna(sl) and pd.notna(tp):
+                    self._signals[key] = ('short', float(sl), float(tp))
+
+    def generate_signal(self, market_data: MarketData) -> Signal:
+        info = self._signals.get(market_data.timestamp)
+        if info is None:
+            return Signal.hold(self.strategy_id, market_data.timestamp, self.symbol)
+        direction, sl, tp = info
+        self._cur = (sl, tp)
+        action = 'BUY' if direction == 'long' else 'SELL'
+        return Signal(self.strategy_id, market_data.timestamp, self.symbol, action,
+                      direction, 0.0, 0.0, 0.0, 0.0, 1.0)
+
+    def calculate_position_size(self, capital: float, price: float) -> float:
+        return (capital * self._base_pct) / price if price > 0 else 0.0
+
+    def calculate_stop_loss(self, entry_price: float, direction: str, atr: float) -> float:
+        return self._cur[0] if self._cur else (entry_price * 0.9)
+
+    def calculate_take_profit(self, entry_price: float, direction: str, atr: float) -> float:
+        return self._cur[1] if self._cur else (entry_price * 1.1)
+
+    def should_exit(self, position, market_data: MarketData) -> bool:
+        return False
+
+
 class ScalpingV11(ScalpingAdapter):
     """真實 v11 的 from-config 版：可直接當 strategy_class 給 Optimizer/StrategyManager。
 
