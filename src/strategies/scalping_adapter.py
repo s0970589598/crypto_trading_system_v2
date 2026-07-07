@@ -134,6 +134,16 @@ class ScalpingAdapter(Strategy):
             'mfe_protection_floor_pct': lv.get('mfe_protection_floor_pct', 0.0),
         }
 
+    def get_time_stop(self, entry_price: float, direction: str, atr: float) -> Optional[dict]:
+        lv = self._exit_levels(entry_price, direction)
+        if not lv.get('use_time_stop', False):
+            return None
+        return {
+            'start': lv.get('time_stop_start', 0),
+            'end': lv.get('time_stop_end', 0),
+            'cost_zone_pct': lv.get('cost_zone_pct', 0.0),
+        }
+
     def should_exit(self, position, market_data: MarketData) -> bool:
         # scalping 出場由 SL/tp1/tp2/MFE 處理，無額外收盤出場
         return False
